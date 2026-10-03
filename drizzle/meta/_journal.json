@@ -8,6 +8,13 @@
       "when": 1791002610585,
       "tag": "0000_strange_celestials",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1791019553673,
+      "tag": "0001_sad_black_crow",
+      "breakpoints": true
     }
   ]
 }

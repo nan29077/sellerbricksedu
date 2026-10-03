@@ -10,3 +10,5 @@ export const cohorts=sqliteTable('cohorts',{id:text('id').primaryKey(),name:text
 export const memberships=sqliteTable('memberships',{userId:text('user_id').primaryKey(),cohortId:text('cohort_id').notNull()});
 export const channels=sqliteTable('channels',{userId:text('user_id').notNull(),platform:text('platform').notNull(),url:text('url').notNull(),bio:text('bio').notNull().default(''),shared:integer('shared').notNull().default(1),created:text('created').notNull()},t=>[primaryKey({columns:[t.userId,t.platform]})]);
 export const channelVisits=sqliteTable('channel_visits',{userId:text('user_id').notNull(),targetId:text('target_id').notNull(),platform:text('platform').notNull(),created:text('created').notNull()},t=>[primaryKey({columns:[t.userId,t.targetId,t.platform]})]);
+
+export const userProfiles=sqliteTable('user_profiles',{userId:text('user_id').primaryKey(),avatar:integer('avatar').notNull(),nameChanges:integer('name_changes').notNull().default(0)});
