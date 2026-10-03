@@ -5,7 +5,7 @@ import {GraduationCap,BookOpen,Play,Bookmark,LayoutDashboard,Users,Video,Setting
 const categories=['전체','입문','방송 준비','실전 판매','운영·정산'];
 const menuStudent=[['/learn','학습 대시보드',LayoutDashboard],['/learn/courses','나의 강의실',BookOpen],['/learn/bookmarks','책갈피',Bookmark],['/learn/notes','학습 노트',PenLine],['/learn/certificates','수료증',Trophy],['/learn/questions','학습 Q&A',MessageCircle],['/learn/community','셀러 채널 교류',Users]];
 const menuAdmin=[['/admin','운영 대시보드',LayoutDashboard],['/admin/courses','교육 과정 관리',Layers],['/admin/videos','영상·퀴즈 관리',Video],['/admin/members','교육생 관리',Users],['/admin/cohorts','기수 관리',GraduationCap],['/admin/community','셀러 채널 교류',Users],['/admin/progress','학습 현황',BarChart3],['/admin/questions','질문 관리',MessageCircle],['/admin/ai','AI 제작 스튜디오',Sparkles],['/admin/settings','연동 설정',Settings]];
-function Logo(){return <span className="brand"><img src="/brand/sellerbricks-original.svg" width="192" height="41" alt="셀러브릭스"/><span className="brand-edu-label">EDU</span></span>}
+function Logo(){return <span className="brand"><img src="/brand/sellerbricks-light.svg" width="192" height="41" alt="셀러브릭스"/><span className="brand-edu-label">EDU</span></span>}
 function Button({children,onClick,secondary=false,small=false,disabled=false}:any){return <button onClick={onClick} disabled={disabled} className={`${secondary?'button secondary':'button'} ${small?'small':''}`}>{children}</button>}
 function Empty({title,description}:any){return <div className="empty"><BookOpen size={34}/><h3>{title}</h3><p>{description}</p></div>}
 const fmt=(s:number)=>`${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}`;
