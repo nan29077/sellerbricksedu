@@ -5,7 +5,7 @@
 현재 온라인 사이트: https://sellerbricks-edu.uncleku77.chatgpt.site/
 
 ## 첫 설치
-1. ZIP을 내려받아 압축을 풉니다. 압축 안의 `sellerbricks` 폴더 이름을 `셀러브릭스에듀`로 바꾸고 `E:\프로젝트` 안으로 옮깁니다.
+1. ZIP을 내려받아 압축을 풉니다. 압축 안의 `셀러브릭스에듀` 폴더를 `E:\프로젝트` 안으로 옮깁니다.
 2. 해당 폴더 안에 `package.json`, `app`, `public`, `scripts`가 있어야 합니다. 폴더가 이중으로 들어가지 않게 확인하세요.
 3. PowerShell에서 실행합니다.
 
