@@ -89,9 +89,18 @@ function NotificationBell() {
 }
 
 export function PortalLayout({ children }: { children: ReactNode }) {
-  const { path, go, user, admin, superAdmin, data, mobile, setMobile, act, setToast, progress } = useEdu();
+  const { path, go, user, admin, superAdmin, data, mobile, setMobile, act, setToast, progress, refreshing } = useEdu();
   const [search, setSearch] = useState('');
   const [nowMs] = useState(() => Date.now());
+  const searchRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    const fn = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement;
+      if (e.key === '/' && !['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName) && !t.isContentEditable) { e.preventDefault(); searchRef.current?.focus(); }
+    };
+    window.addEventListener('keydown', fn);
+    return () => window.removeEventListener('keydown', fn);
+  }, []);
   if (!user || !data) return null;
   const counts: Record<string, number> = {
     bookmarks: progress.filter((p) => p.bookmark).length,
@@ -102,9 +111,13 @@ export function PortalLayout({ children }: { children: ReactNode }) {
     questions: data.messages.filter((m) => !m.reply).length,
   };
   const menus = admin ? MENU_ADMIN.filter(([p]) => superAdmin || p !== '/admin/settings') : MENU_STUDENT;
-  const results = search.trim().length > 1
-    ? data.lessons.filter((l) => l.title.includes(search) || l.summary.includes(search)).slice(0, 6)
-    : [];
+  const q = search.trim();
+  const results: { key: string; title: string; sub: string; to: string }[] = q.length > 1 ? [
+    ...data.courses.filter((c) => c.title.includes(q)).slice(0, 3).map((c) => ({ key: 'c' + c.id, title: c.title, sub: '과정 · ' + c.category, to: '/course/' + c.id })),
+    ...data.lessons.filter((l) => l.title.includes(q) || l.summary.includes(q)).slice(0, 5).map((l) => ({ key: 'l' + l.id, title: l.title, sub: '강의 · ' + (data.courses.find((c) => c.id === l.course_id)?.title || ''), to: '/lesson/' + l.id })),
+    ...(data.posts ?? []).filter((p) => p.title.includes(q)).slice(0, 3).map((p) => ({ key: 'p' + p.id, title: p.title, sub: '라운지 · ' + p.name, to: '/learn/lounge/' + p.id })),
+    ...data.announcements.filter((a) => a.title.includes(q)).slice(0, 2).map((a) => ({ key: 'a' + a.id, title: a.title, sub: '공지', to: admin ? '/admin/announcements' : '/learn/notices' })),
+  ] : [];
   return (
     <div className="portal">
       <aside className={'sidebar ' + (mobile ? 'open' : '')}>
@@ -132,7 +145,7 @@ export function PortalLayout({ children }: { children: ReactNode }) {
             <span><b>{user.name}</b><small>{ROLES[user.role] || '셀러 교육생'}</small></span>
             <Settings size={17} />
           </button>
-          <button className="logout" onClick={async () => { try { await act('logout'); location.href = '/login'; } catch (e: any) { setToast(e.message); } }}><LogOut size={17} /> 로그아웃</button>
+          <button className="logout" onClick={async () => { try { await act('logout'); location.href = '/login'; } catch (e: any) { setToast(e.message, 'error'); } }}><LogOut size={17} /> 로그아웃</button>
         </div>
       </aside>
       {mobile && <button className="sidebar-backdrop" onClick={() => setMobile(false)} aria-label="메뉴 닫기" />}
@@ -141,14 +154,15 @@ export function PortalLayout({ children }: { children: ReactNode }) {
           <div>
             <button className="mobile-menu" onClick={() => setMobile(!mobile)} aria-label="메뉴 열기"><Menu size={23} /></button>
             <span>{admin ? (superAdmin ? '관리자 센터' : '운영 관리자 센터') : '나의 학습 공간'}</span>
+            {refreshing && <span className="sync-dot" title="동기화 중" aria-label="동기화 중" />}
           </div>
           <div className="portal-search">
             <Search size={16} />
-            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="강의 검색" aria-label="강의 검색" onKeyDown={(e) => { if (e.key === 'Escape') setSearch(''); }} />
+            <input ref={searchRef} value={search} onChange={(e) => setSearch(e.target.value)} placeholder="검색 ( / )" aria-label="통합 검색" onKeyDown={(e) => { if (e.key === 'Escape') { setSearch(''); (e.target as HTMLInputElement).blur(); } if (e.key === 'Enter' && results[0]) { setSearch(''); go(results[0].to); } }} />
             {results.length > 0 && (
               <ul className="search-results">
-                {results.map((l) => (
-                  <li key={l.id}><button onClick={() => { setSearch(''); go('/lesson/' + l.id); }}><b>{l.title}</b><small>{data.courses.find((c) => c.id === l.course_id)?.title}</small></button></li>
+                {results.map((r) => (
+                  <li key={r.key}><button onClick={() => { setSearch(''); go(r.to); }}><b>{r.title}</b><small>{r.sub}</small></button></li>
                 ))}
               </ul>
             )}

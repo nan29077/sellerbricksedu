@@ -120,6 +120,19 @@ export async function recordFailure(req: Request, email: string) {
     ),
   );
 }
+/** IP 단위 간단 제한(가입·재설정 요청 등): 15분 내 limit 회 */
+export async function ipLimit(req: Request, bucket: string, limit = 10) {
+  const key = `${bucket}:${clientIp(req)}`;
+  const t = Date.now();
+  const r = await first<{ count: number; first: number }>('SELECT count, first FROM login_attempts WHERE key=?', key);
+  if (r && t - r.first < WINDOW && r.count >= limit) throw new HttpError(429, '요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.');
+  await run(
+    `INSERT INTO login_attempts (key,count,first) VALUES (?,1,?)
+     ON CONFLICT(key) DO UPDATE SET count=CASE WHEN ?-login_attempts.first>? THEN 1 ELSE login_attempts.count+1 END,
+                                    first=CASE WHEN ?-login_attempts.first>? THEN ? ELSE login_attempts.first END`,
+    key, t, t, WINDOW, t, WINDOW, t,
+  );
+}
 export async function clearFailures(req: Request, email: string) {
   await run(`DELETE FROM login_attempts WHERE key IN (?,?)`, 'ip:' + clientIp(req), 'email:' + email);
 }

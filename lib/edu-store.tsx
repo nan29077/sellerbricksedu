@@ -5,13 +5,15 @@ import { isStaff } from './constants';
 
 export type ModalState = { type: string; [k: string]: any } | null;
 export type ConfirmState = { title: string; body?: string; danger?: boolean; confirmLabel?: string; resolve: (ok: boolean) => void } | null;
+export type ToastState = { text: string; tone: 'success' | 'error' | 'info' } | null;
 
 interface Store {
   path: string;
   data: Payload | null;
   error: string;
   busy: boolean;
-  toast: string;
+  refreshing: boolean;
+  toast: ToastState;
   modal: ModalState;
   editor: any;
   mobile: boolean;
@@ -26,12 +28,15 @@ interface Store {
   load: () => Promise<Payload | undefined>;
   act: (action: string, extra?: any, quiet?: boolean) => Promise<any>;
   perform: (action: string, extra?: any, success?: string) => Promise<any>;
-  setToast: (t: string) => void;
+  /** 서버 응답을 기다리지 않고 로컬 데이터를 먼저 바꾼다(낙관적 업데이트). */
+  patch: (fn: (d: Payload) => Payload) => void;
+  setToast: (t: string | ToastState, tone?: 'success' | 'error' | 'info') => void;
   setModal: (m: ModalState) => void;
   setEditor: (e: any) => void;
   setMobile: (m: boolean) => void;
   setBusy: (b: boolean) => void;
   openModal: (type: string, editor?: any, extra?: Record<string, any>) => void;
+  closeModal: () => Promise<void>;
   ask: (title: string, body?: string, opts?: { danger?: boolean; confirmLabel?: string }) => Promise<boolean>;
   pfor: (lessonId: string | undefined) => Partial<Progress>;
   ls: (courseId: string | undefined) => Lesson[];
@@ -47,20 +52,31 @@ export function EduProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<Payload | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [toast, setToast] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
+  const [toast, setToastState] = useState<ToastState>(null);
   const [modal, setModal] = useState<ModalState>(null);
   const [editor, setEditor] = useState<any>({});
   const [mobile, setMobile] = useState(false);
   const [confirm, setConfirm] = useState<ConfirmState>(null);
   const loading = useRef<Promise<any> | null>(null);
+  const etag = useRef<string>('');
+  const modalInitial = useRef<string>('');
+
+  const setToast = useCallback((t: string | ToastState, tone: 'success' | 'error' | 'info' = 'success') => {
+    if (!t) return setToastState(null);
+    setToastState(typeof t === 'string' ? { text: t, tone } : t);
+  }, []);
 
   const load = useCallback(async () => {
     if (loading.current) return loading.current;
     loading.current = (async () => {
+      setRefreshing(true);
       try {
-        const r = await fetch('/api/edu', { cache: 'no-store', credentials: 'same-origin' });
+        const r = await fetch('/api/edu', { cache: 'no-store', credentials: 'same-origin', headers: etag.current ? { 'If-None-Match': etag.current } : {} });
+        if (r.status === 304) return data ?? undefined; // 변경 없음
         const j: any = await r.json();
         if (!r.ok) throw Error(j.error);
+        etag.current = r.headers.get('ETag') || '';
         setData(j);
         setError('');
         return j as Payload;
@@ -69,9 +85,11 @@ export function EduProvider({ children }: { children: ReactNode }) {
         return undefined;
       } finally {
         loading.current = null;
+        setRefreshing(false);
       }
     })();
     return loading.current;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -87,8 +105,8 @@ export function EduProvider({ children }: { children: ReactNode }) {
       if (document.visibilityState === 'visible') load();
     };
     document.addEventListener('visibilitychange', vis);
-    // 알림·답변 등 관리자↔교육생 간 변경 사항을 주기적으로 동기화
-    const poll = setInterval(() => { if (document.visibilityState === 'visible') load(); }, 90000);
+    // 알림·답변 등 관리자↔교육생 간 변경 사항을 주기적으로 동기화 (ETag로 변경 없으면 304)
+    const poll = setInterval(() => { if (document.visibilityState === 'visible') load(); }, 60000);
     return () => {
       clearInterval(poll);
       window.removeEventListener('popstate', fn);
@@ -98,7 +116,7 @@ export function EduProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!toast) return;
-    const t = setTimeout(() => setToast(''), 4500);
+    const t = setTimeout(() => setToastState(null), toast.tone === 'error' ? 6000 : 4000);
     return () => clearTimeout(t);
   }, [toast]);
 
@@ -107,7 +125,7 @@ export function EduProvider({ children }: { children: ReactNode }) {
     else history.pushState({}, '', p);
     setPath(p);
     setMobile(false);
-    window.scrollTo(0, 0);
+    window.scrollTo({ top: 0 });
   }, []);
 
   const act = useCallback(
@@ -115,13 +133,13 @@ export function EduProvider({ children }: { children: ReactNode }) {
       if (!quiet) setBusy(true);
       try {
         const r = await fetch('/api/edu', { method: 'POST', credentials: 'same-origin', cache: 'no-store', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, ...extra }) });
-        const j: any = await r.json();
-        if (!r.ok) throw Error(j.error);
+        const j: any = await r.json().catch(() => ({ error: '응답을 읽지 못했습니다.' }));
+        if (!r.ok) throw Error(j.error || `요청 실패 (${r.status})`);
         if (!quiet && !['ai', 'quiz', 'logout'].includes(action)) await load();
         return j;
       } catch (e: any) {
         if (quiet) {
-          setToast(e.message);
+          setToast(e.message, 'error');
           return null;
         }
         throw e;
@@ -129,7 +147,7 @@ export function EduProvider({ children }: { children: ReactNode }) {
         if (!quiet) setBusy(false);
       }
     },
-    [load],
+    [load, setToast],
   );
 
   const perform = useCallback(
@@ -137,23 +155,47 @@ export function EduProvider({ children }: { children: ReactNode }) {
       try {
         const j = await act(action, extra);
         if (j) {
-          if (success) setToast(success);
+          if (success) setToast(success, 'success');
           setModal(null);
+          modalInitial.current = '';
         }
         return j;
       } catch (e: any) {
-        setToast(e.message);
+        setToast(e.message, 'error');
         return null;
       }
     },
-    [act],
+    [act, setToast],
   );
+
+  const patch = useCallback((fn: (d: Payload) => Payload) => setData((d) => (d ? fn(d) : d)), []);
 
   const ask = useCallback((title: string, body?: string, opts?: { danger?: boolean; confirmLabel?: string }) => new Promise<boolean>((resolve) => setConfirm({ title, body, ...opts, resolve })), []);
   const openModal = useCallback((type: string, ed: any = {}, extra: Record<string, any> = {}) => {
     setEditor(ed);
+    modalInitial.current = JSON.stringify(ed);
     setModal({ type, ...extra });
   }, []);
+  /** 편집 중인 내용이 있으면 확인 후 닫기 */
+  const closeModal = useCallback(async () => {
+    const editable = ['course', 'lesson', 'post', 'announcement', 'assignment', 'event', 'path', 'faq', 'cohort', 'channel', 'reply', 'import', 'nudge'];
+    if (modal && editable.includes(modal.type) && modalInitial.current && JSON.stringify(editor) !== modalInitial.current) {
+      if (!(await ask('작성 중인 내용을 닫을까요?', '저장하지 않은 변경 사항이 사라집니다.', { danger: true, confirmLabel: '닫기' }))) return;
+    }
+    setModal(null);
+    modalInitial.current = '';
+  }, [modal, editor, ask]);
+
+  // Escape 로 확인창/모달 닫기
+  useEffect(() => {
+    const fn = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (confirm) { confirm.resolve(false); setConfirm(null); return; }
+      if (modal) closeModal();
+    };
+    window.addEventListener('keydown', fn);
+    return () => window.removeEventListener('keydown', fn);
+  }, [confirm, modal, closeModal]);
 
   const user = data?.user ?? null;
   const courses = data?.courses ?? [];
@@ -172,9 +214,9 @@ export function EduProvider({ children }: { children: ReactNode }) {
   }, [courses, lessons, progress]);
 
   const value: Store = {
-    path, data, error, busy, toast, modal, editor, mobile, confirm,
+    path, data, error, busy, refreshing, toast, modal, editor, mobile, confirm,
     user, admin: isStaff(user?.role), superAdmin: user?.role === 'admin', courses, lessons, progress,
-    go, load, act, perform, setToast, setModal, setEditor, setMobile, setBusy, openModal, ask,
+    go, load, act, perform, patch, setToast, setModal, setEditor, setMobile, setBusy, openModal, closeModal, ask,
     ...helpers,
     unread: data?.notifications?.filter((n) => !n.read).length ?? 0,
   };
@@ -188,7 +230,7 @@ export function EduProvider({ children }: { children: ReactNode }) {
             {confirm.body && <p className="muted">{confirm.body}</p>}
             <div className="modal-actions">
               <button type="button" className="button secondary" onClick={() => { confirm.resolve(false); setConfirm(null); }}>취소</button>
-              <button type="button" className={'button ' + (confirm.danger ? 'danger' : '')} onClick={() => { confirm.resolve(true); setConfirm(null); }}>{confirm.confirmLabel || '확인'}</button>
+              <button type="button" autoFocus className={'button ' + (confirm.danger ? 'danger' : '')} onClick={() => { confirm.resolve(true); setConfirm(null); }}>{confirm.confirmLabel || '확인'}</button>
             </div>
           </section>
         </div>

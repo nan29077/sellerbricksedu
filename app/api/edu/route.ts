@@ -109,7 +109,13 @@ export async function GET(req: Request) {
       if (user?.role !== 'admin') return out({ error: '최고 관리자 권한이 필요합니다.' }, 403);
       return Response.json(await admin.exportContent(), { headers: { 'Content-Disposition': `attachment; filename="sellerbricks-edu-content-${new Date().toISOString().slice(0, 10)}.json"`, 'Cache-Control': 'private, no-store' } });
     }
-    return out(await buildPayload(user));
+    const payload = JSON.stringify(await buildPayload(user));
+    // 약한 ETag: 내용이 같으면 304 로 폴링 트래픽을 줄인다
+    let h = 5381;
+    for (let i = 0; i < payload.length; i++) h = ((h * 33) ^ payload.charCodeAt(i)) >>> 0;
+    const tag = `W/"${h.toString(16)}-${payload.length}"`;
+    if (req.headers.get('if-none-match') === tag) return new Response(null, { status: 304, headers: { ETag: tag, 'Cache-Control': 'private, no-store', Vary: 'Cookie' } });
+    return new Response(payload, { status: 200, headers: { 'Content-Type': 'application/json', ETag: tag, 'Cache-Control': 'private, no-store', Vary: 'Cookie' } });
   } catch (e) {
     console.error('edu GET failed', e);
     return out({ error: '교육 정보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.' }, 503);

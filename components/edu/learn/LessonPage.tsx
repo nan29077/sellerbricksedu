@@ -8,7 +8,7 @@ import { Button, CharacterAvatar, Empty, Pill, ProgressBar, Tabs, CharacterAvata
 import { Player, type PlayerApi } from './Player';
 
 export function LessonPage({ lesson }: { lesson: Lesson }) {
-  const { user, data, go, act, perform, load, busy, pfor, ls, pct, courseOf, setToast, admin } = useEdu();
+  const { user, data, go, act, perform, load, busy, pfor, ls, pct, courseOf, setToast, admin, patch } = useEdu();
   const lp = pfor(lesson.id);
   const course = courseOf(lesson);
   const items = ls(lesson.course_id);
@@ -28,7 +28,8 @@ export function LessonPage({ lesson }: { lesson: Lesson }) {
   const pendingWatch = useRef(0);
 
   const watched = Math.max(localWatched, lp.watched || 0);
-  const canQuiz = watched >= lesson.duration * ratio || !!lp.complete;
+  const reading = !lesson.video;
+  const canQuiz = reading || watched >= lesson.duration * ratio || !!lp.complete;
   const watchedPct = Math.min(100, Math.round((watched / lesson.duration) * 100));
   const myNotes = (data?.notes ?? []).filter((n) => n.lesson_id === lesson.id);
   const lessonQa = useMemo(() => (data?.messages ?? []).filter((m) => m.lesson_id === lesson.id).sort((a, b) => b.pinned - a.pinned || b.votes - a.votes || b.created.localeCompare(a.created)), [data?.messages, lesson.id]);
@@ -48,7 +49,7 @@ export function LessonPage({ lesson }: { lesson: Lesson }) {
       setQuizResult(r);
       await load();
       document.getElementById('quiz-result')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    } catch (e: any) { setToast(e.message); }
+    } catch (e: any) { setToast(e.message, 'error'); }
   }
 
   if (!user && !lesson.preview) return <Empty title="로그인이 필요한 강의입니다" description="로그인 후 학습을 이어가세요." icon={Lock} action={<Button onClick={() => go(`/login?return_to=${encodeURIComponent('/lesson/' + lesson.id)}`)}>로그인</Button>} />;
@@ -72,7 +73,7 @@ export function LessonPage({ lesson }: { lesson: Lesson }) {
         </div>
         <div className="lesson-heading">
           <h1>{lesson.title}</h1>
-          {user && <button className={'bookmark-button ' + (lp.bookmark ? 'on' : '')} onClick={() => perform('bookmark', { lessonId: lesson.id }, lp.bookmark ? '책갈피를 해제했습니다.' : '책갈피에 저장했습니다.')}><Bookmark size={18} fill={lp.bookmark ? 'currentColor' : 'none'} />{lp.bookmark ? '저장됨' : '책갈피'}</button>}
+          {user && <button className={'bookmark-button ' + (lp.bookmark ? 'on' : '')} onClick={() => { const on = !lp.bookmark; patch((d) => ({ ...d, progress: d.progress.some((p) => p.lesson_id === lesson.id) ? d.progress.map((p) => p.lesson_id === lesson.id ? { ...p, bookmark: on ? 1 : 0 } : p) : [...d.progress, { user_id: user.id, lesson_id: lesson.id, position: 0, watched: 0, complete: 0, score: null, bookmark: 1, note: '', updated: new Date().toISOString(), attempts: 0, best_score: null, completed_at: '' }] })); act('bookmark', { lessonId: lesson.id }, true).then((r) => { if (r) setToast(on ? '책갈피에 저장했습니다.' : '책갈피를 해제했습니다.'); }); }}><Bookmark size={18} fill={lp.bookmark ? 'currentColor' : 'none'} />{lp.bookmark ? '저장됨' : '책갈피'}</button>}
         </div>
         <p className="muted">{lesson.summary}</p>
         {objectives.length > 0 && <div className="panel objectives compact"><h3><Target size={18} className="purple" /> 학습 목표</h3><ul>{objectives.map((o) => <li key={o}><CheckCircle2 size={15} />{o}</li>)}</ul></div>}
@@ -126,7 +127,7 @@ export function LessonPage({ lesson }: { lesson: Lesson }) {
                         <p className="note-text">{m.body}</p>
                         {m.reply && <div className="reply"><b>에듀 관리자 답변</b><p>{m.reply}</p></div>}
                         <div className="qa-actions">
-                          <button className={m.voted ? 'on' : ''} onClick={() => act('vote', { id: m.id }, true).then(load)} aria-pressed={!!m.voted}><ThumbsUp size={14} /> 저도 궁금해요 {m.votes > 0 && m.votes}</button>
+                          <button className={m.voted ? 'on' : ''} onClick={() => { patch((d) => ({ ...d, messages: d.messages.map((x) => x.id === m.id ? { ...x, voted: x.voted ? 0 : 1, votes: x.votes + (x.voted ? -1 : 1) } : x) })); act('vote', { id: m.id }, true); }} aria-pressed={!!m.voted}><ThumbsUp size={14} /> 저도 궁금해요 {m.votes > 0 && m.votes}</button>
                           {(m.user_id === user.id && !m.reply || admin) && <button onClick={() => perform('question_delete', { id: m.id }, '질문을 삭제했습니다.')}><Trash2 size={14} /> 삭제</button>}
                         </div>
                       </div>
@@ -153,6 +154,7 @@ export function LessonPage({ lesson }: { lesson: Lesson }) {
                   {lp.attempts ? <Pill tone="info" className="attempt-pill" >{lp.attempts}회 응시 · 최고 {lp.best_score ?? lp.score}점{(data?.quizAttempts ?? []).filter((a) => a.lesson_id === lesson.id).slice(0, 5).length > 1 ? ' · 최근 ' + (data?.quizAttempts ?? []).filter((a) => a.lesson_id === lesson.id).slice(0, 5).map((a) => a.score).join('→') : ''}</Pill> : null}
                 </div>
               </div>
+              {reading && !lp.complete && <div className="info-note"><Lightbulb size={17} /> 영상 등록 전에는 학습 소개와 자료를 읽고 확인 문제를 통과하면 강의가 완료돼요.</div>}
               {!canQuiz && <div className="info-note"><Lock size={17} /> 영상의 {Math.round(ratio * 100)}% 이상을 시청하면 확인 문제를 풀 수 있어요. <ProgressBar value={Math.min(100, Math.round((watchedPct / (ratio * 100)) * 100))} small /></div>}
               <fieldset disabled={!canQuiz || busy}>
                 {lesson.questions.map((q, i) => {

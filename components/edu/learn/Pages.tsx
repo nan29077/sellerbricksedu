@@ -85,7 +85,7 @@ export function CertificatesPage() {
           <p className="cert-date">{fmtDate(c.issued)}<br /><b>{signer}</b></p>
           <small>검증 번호 · {c.id} · {typeof location !== 'undefined' ? location.origin : ''}/verify/{c.id}</small>
           <div className="cert-actions no-print">
-            <Button secondary small onClick={() => { document.body.dataset.print = c.id; window.print(); setTimeout(() => delete document.body.dataset.print, 500); }}><Download size={16} /> 인쇄 / PDF 저장</Button>
+            <Button secondary small onClick={() => { const el = document.getElementById('cert-' + c.id); el?.classList.add('printing'); document.body.dataset.print = c.id; window.print(); setTimeout(() => { el?.classList.remove('printing'); delete document.body.dataset.print; }, 500); }}><Download size={16} /> 인쇄 / PDF 저장</Button>
             <Button secondary small onClick={() => { navigator.clipboard?.writeText(`${location.origin}/verify/${c.id}`); }}><Share2 size={16} /> 검증 링크 복사</Button>
           </div>
         </div>
@@ -95,7 +95,7 @@ export function CertificatesPage() {
 }
 
 export function QuestionsPage() {
-  const { data, user, lessons, courses, act, load, perform, admin, go, ask } = useEdu();
+  const { data, user, lessons, courses, act, perform, admin, go, ask, patch } = useEdu();
   const [filter, setFilter] = useState<'all' | 'mine' | 'open' | 'answered'>(admin ? 'open' : 'mine');
   const [search, setSearch] = useState('');
   const messages = data?.messages;
@@ -124,7 +124,7 @@ export function QuestionsPage() {
             <p className="note-text">{m.body}</p>
             {m.reply && <div className="reply"><b>에듀 관리자 답변</b><p>{m.reply}</p></div>}
             <div className="qa-actions">
-              <button className={m.voted ? 'on' : ''} onClick={() => act('vote', { id: m.id }, true).then(load)}><ThumbsUp size={14} /> 저도 궁금해요 {m.votes > 0 && m.votes}</button>
+              <button className={m.voted ? 'on' : ''} onClick={() => { patch((d) => ({ ...d, messages: d.messages.map((x) => x.id === m.id ? { ...x, voted: x.voted ? 0 : 1, votes: x.votes + (x.voted ? -1 : 1) } : x) })); act('vote', { id: m.id }, true); }}><ThumbsUp size={14} /> 저도 궁금해요 {m.votes > 0 && m.votes}</button>
               {admin && <>
                 <Button small secondary onClick={() => perform('question_update', { id: m.id, pinned: m.pinned ? 0 : 1 }, m.pinned ? '추천을 해제했습니다.' : '추천 질문으로 고정했습니다.')}><Pin size={14} /> {m.pinned ? '추천 해제' : '추천 고정'}</Button>
                 <Button small secondary onClick={() => perform('question_update', { id: m.id, public: m.public ? 0 : 1 }, '공개 설정을 변경했습니다.')}>{m.public ? '비공개로' : '공개로'}</Button>

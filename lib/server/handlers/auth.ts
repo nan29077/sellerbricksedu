@@ -1,6 +1,6 @@
 import { first, run, batch, stmt, now, uid, HttpError } from '../db';
 import { out, str, num, siteUrl } from '../http';
-import { createSession, destroySession, encodePassword, verifyPassword, checkRateLimit, recordFailure, clearFailures, randomAvatar, sessionToken, type SessionUser } from '../auth';
+import { createSession, destroySession, encodePassword, verifyPassword, checkRateLimit, recordFailure, clearFailures, ipLimit, randomAvatar, sessionToken, type SessionUser } from '../auth';
 import { notify, notifyAdmins, logActivity } from '../notify';
 import { sendMail } from '../mail';
 import type { Ctx } from './types';
@@ -17,8 +17,9 @@ export async function demo({ req, body }: Ctx) {
   return out({ user: { id: u.id, name: u.name, email: u.email, role: u.role } }, 200, { 'Set-Cookie': s.header });
 }
 
-export async function register({ body, settings }: Ctx) {
+export async function register({ req, body, settings }: Ctx) {
   const email = str(body.email, 200).toLowerCase();
+  await ipLimit(req, 'register', 10);
   const name = str(body.name, 30);
   const password = String(body.password || '');
   if (!EMAIL.test(email) || password.length < 10 || password.length > 128 || name.length < 2) throw new HttpError(400, '이름(2자 이상), 이메일과 10자 이상의 비밀번호를 입력해 주세요.');
@@ -59,6 +60,7 @@ export async function logout({ req }: Ctx) {
 /** 비밀번호 재설정 요청 — 메일 발송 설정이 있으면 메일, 없으면 관리자 화면에서 링크 전달 */
 export async function forgot({ req, body, settings }: Ctx) {
   const email = str(body.email, 200).toLowerCase();
+  await ipLimit(req, 'forgot', 5);
   const generic = { ok: true, message: '등록된 이메일이면 재설정 안내가 진행됩니다. 메일이 오지 않으면 관리자에게 문의해 주세요.' };
   const u = await first<any>('SELECT id,name,password FROM users WHERE email=? AND status!=?', email, 'suspended');
   if (!u || !u.password) return out(generic);

@@ -10,10 +10,11 @@ const TITLES: Record<string, string> = { post: '라운지 글쓰기', event: '�
 export function EduModals() {
   const store = useEdu();
   const storeRef = store;
-  const { modal, setModal, editor, setEditor, perform, busy, courses, lessons, data, ls, pct, setBusy, load, setToast, act, openModal } = store;
+  const { modal, setModal, closeModal, editor, setEditor, perform, busy, courses, lessons, data, ls, pct, setBusy, load, setToast, act, openModal } = store;
   const [aiText, setAiText] = useState('');
   if (!modal) return null;
-  const close = () => setModal(null);
+  void setModal;
+  const close = () => { void closeModal(); };
   const set = (k: string, v: any) => setEditor({ ...editor, [k]: v });
   const wide = ['lesson', 'progress', 'import', 'announcement', 'assignment', 'post', 'event', 'path', 'invite_bulk', 'content_import'].includes(modal.type);
   const title = modal.type === 'progress' ? `${modal.user?.name}님의 학습 현황` : TITLES[modal.type] || '설정';
@@ -82,7 +83,7 @@ export function EduModals() {
         {aiText && <pre className="resource-text">{aiText}</pre>}
         <div className="modal-actions">
           <Button secondary onClick={close}>닫기</Button>
-          <Button disabled={busy || !data?.hasAiKey} onClick={async () => { try { const r = await act('ai', { topic: editor.topic, mode: 'quiz' }); if (r.json) { openModal('lesson', { ...editor.lesson, questions: JSON.stringify(r.json, null, 2) }); setToast('확인 문제 초안을 적용했습니다. 검토 후 저장하세요.'); } else setAiText(r.text); } catch (e: any) { setToast(e.message); } }}><Sparkles size={16} /> {busy ? '생성 중…' : '문제 생성'}</Button>
+          <Button disabled={busy || !data?.hasAiKey} onClick={async () => { try { const r = await act('ai', { topic: editor.topic, mode: 'quiz' }); if (r.json) { openModal('lesson', { ...editor.lesson, questions: JSON.stringify(r.json, null, 2) }); setToast('확인 문제 초안을 적용했습니다. 검토 후 저장하세요.'); } else setAiText(r.text); } catch (e: any) { setToast(e.message, 'error'); } }}><Sparkles size={16} /> {busy ? '생성 중…' : '문제 생성'}</Button>
         </div>
       </Modal>
     );
@@ -315,7 +316,7 @@ function LessonForm({ editor, set }: { editor: any; set: (k: string, v: any) => 
                 v.onloadedmetadata = () => { setEditor((prev: any) => ({ ...prev, video: j.video, duration: Math.round(v.duration) || prev.duration })); URL.revokeObjectURL(url); };
                 v.onerror = () => setEditor((prev: any) => ({ ...prev, video: j.video }));
                 setToast('영상을 업로드했습니다. 길이와 확인 문제를 저장해 주세요.');
-              } catch (err: any) { setToast(err.message); } finally { setBusy(false); }
+              } catch (err: any) { setToast(err.message, 'error'); } finally { setBusy(false); }
             }} />
           ) : <small>강의를 먼저 저장하면 영상 파일을 업로드할 수 있어요.</small>}
         </div>
@@ -368,7 +369,7 @@ function LessonForm({ editor, set }: { editor: any; set: (k: string, v: any) => 
           {editor.id ? (
             <>
               <ul className="file-list">{(data?.lessonFiles ?? []).filter((f) => f.lesson_id === editor.id).map((f) => <li key={f.id}><a href={'/api/media/' + f.id} target="_blank" rel="noopener noreferrer">{f.name}</a><small>{Math.round(f.size / 1024)}KB</small><button type="button" className="icon-button" aria-label="삭제" onClick={() => perform('lesson_file_delete', { id: f.id }, '파일을 삭제했습니다.')}><Trash2 size={14} /></button></li>)}</ul>
-              <input type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.txt,.docx,.xlsx,.pptx,.zip" onChange={async (e) => { const file = e.target.files?.[0]; if (!file) return; setBusy(true); try { const fd = new FormData(); fd.set('file', file); fd.set('lessonId', editor.id); fd.set('kind', 'file'); const r = await fetch('/api/edu', { method: 'POST', body: fd }); const j: any = await r.json(); if (!r.ok) throw Error(j.error); await load(); setToast('파일을 첨부했습니다.'); } catch (err: any) { setToast(err.message); } finally { setBusy(false); e.target.value = ''; } }} />
+              <input type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.txt,.docx,.xlsx,.pptx,.zip" onChange={async (e) => { const file = e.target.files?.[0]; if (!file) return; setBusy(true); try { const fd = new FormData(); fd.set('file', file); fd.set('lessonId', editor.id); fd.set('kind', 'file'); const r = await fetch('/api/edu', { method: 'POST', body: fd }); const j: any = await r.json(); if (!r.ok) throw Error(j.error); await load(); setToast('파일을 첨부했습니다.'); } catch (err: any) { setToast(err.message, 'error'); } finally { setBusy(false); e.target.value = ''; } }} />
             </>
           ) : <small>강의를 먼저 저장하면 파일을 첨부할 수 있어요.</small>}
         </div>

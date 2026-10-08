@@ -4,7 +4,7 @@ import { Search, Download, KeyRound, Trash2, ShieldCheck, CheckSquare, Square, U
 import { useEdu } from '../../../lib/edu-store';
 import { ROLES } from '../../../lib/constants';
 import { downloadCsv, fmtLong, fmtShort, relTime } from '../../../lib/learning';
-import { Button, CharacterAvatar, Empty, PageHead, Pill, ProgressBar, Tabs, statusLabel, statusTone } from '../ui';
+import { Button, CharacterAvatar, Empty, PageHead, Pill, ProgressBar, Tabs, statusLabel, statusTone, useLimit } from '../ui';
 
 type Status = 'all' | 'pending' | 'active' | 'suspended' | 'staff' | 'inactive';
 
@@ -25,6 +25,7 @@ export function AdminMembers({ report = false }: { report?: boolean }) {
     (cohortFilter === 'all' || (cohortFilter === 'none' ? !u.cohort_id : u.cohort_id === cohortFilter)) &&
     (status === 'all' || status === 'staff' || (status === 'inactive' ? u.status === 'active' && (!u.last_active || u.last_active < weekAgo) : u.status === status)))
     .sort((a, b) => sort === 'name' ? a.name.localeCompare(b.name) : sort === 'progress' ? b.completed - a.completed : sort === 'active' ? (b.last_active || '').localeCompare(a.last_active || '') : b.created.localeCompare(a.created)), [users, search, cohortFilter, status, sort, weekAgo]);
+  const [visibleList, more] = useLimit(list, 24);
   if (!data) return null;
   const students = users.filter((u) => u.role === 'student');
   const toggle = (id: string) => setSelected((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
@@ -67,7 +68,7 @@ export function AdminMembers({ report = false }: { report?: boolean }) {
         </div>
       )}
       <div className="members-grid">
-        {list.map((u) => {
+        {visibleList.map((u) => {
           const ps = allProgress.filter((p) => p.user_id === u.id);
           const percent = lessons.length ? Math.round((ps.filter((p) => p.complete).length / lessons.length) * 100) : 0;
           const reset = resets.find((r) => r.user_id === u.id);
@@ -105,7 +106,7 @@ export function AdminMembers({ report = false }: { report?: boolean }) {
                 {!report && !staff && <>
                   {u.status === 'pending' && <Button small onClick={() => perform('member', { id: u.id, status: 'active' }, `${u.name}님을 승인했습니다.`)}>승인</Button>}
                   <Button secondary small title="알림 보내기" onClick={() => openModal('nudge', { ids: [u.id], title: '', body: '', link: '/learn', name: u.name })}><BellRing size={14} /></Button>
-                  {superAdmin && <Button secondary small title="비밀번호 재설정 링크" onClick={async () => { try { const r = await act('reset_link', { userId: u.id }); await navigator.clipboard?.writeText(r.link); setToast('재설정 링크를 복사했습니다. 교육생에게 전달해 주세요. (24시간 유효)'); } catch (e: any) { setToast(e.message); } }}><KeyRound size={14} /></Button>}
+                  {superAdmin && <Button secondary small title="비밀번호 재설정 링크" onClick={async () => { try { const r = await act('reset_link', { userId: u.id }); await navigator.clipboard?.writeText(r.link); setToast('재설정 링크를 복사했습니다. 교육생에게 전달해 주세요. (24시간 유효)'); } catch (e: any) { setToast(e.message, 'error'); } }}><KeyRound size={14} /></Button>}
                   {superAdmin && <Button secondary small title="운영 관리자로 지정" onClick={async () => { if (await ask(`${u.name}님을 운영 관리자로 지정할까요?`, '교육 운영 기능을 사용할 수 있게 됩니다. (연동 설정·삭제·권한 변경은 제외)')) perform('member', { id: u.id, role: 'manager' }, '운영 관리자로 지정했습니다.'); }}><ShieldCheck size={14} /></Button>}
                   {superAdmin && <Button secondary small danger title="삭제" onClick={async () => { if (await ask(`${u.name}님의 계정을 삭제할까요?`, '학습 기록, 노트, 질문이 모두 삭제되며 복구할 수 없습니다.', { danger: true, confirmLabel: '삭제' })) perform('member_delete', { id: u.id }, '계정을 삭제했습니다.'); }}><Trash2 size={14} /></Button>}
                 </>}
@@ -116,6 +117,7 @@ export function AdminMembers({ report = false }: { report?: boolean }) {
           );
         })}
       </div>
+      {more}
       {!list.length && <Empty title={status === 'staff' ? '운영진이 없어요' : '교육생을 찾을 수 없어요'} description={status === 'staff' ? '교육생 카드의 방패 버튼으로 운영 관리자를 지정할 수 있어요.' : '교육 가입 신청이 접수되면 이곳에서 확인할 수 있습니다.'} />}
     </>
   );

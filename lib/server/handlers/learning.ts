@@ -88,13 +88,15 @@ export async function quiz({ body, user, settings }: AuthedCtx) {
   const lesson = await publishedLesson(str(body.lessonId, 100));
   const p = await ensureProgress(user.id, lesson.id);
   const ratio = watchRatio(settings), pass = passScore(settings);
-  if (p.watched < lesson.duration * ratio) throw new HttpError(400, `영상의 ${Math.round(ratio * 100)}% 이상을 시청하면 확인 문제를 풀 수 있습니다.`);
+  const reading = !lesson.video; // 영상 미등록 강의는 학습 자료 기반 '읽기 강의'
+  if (!reading && p.watched < lesson.duration * ratio) throw new HttpError(400, `영상의 ${Math.round(ratio * 100)}% 이상을 시청하면 확인 문제를 풀 수 있습니다.`);
   const qs: any[] = JSON.parse(lesson.questions);
   const answers: number[] = Array.isArray(body.answers) ? body.answers : [];
   const correct = qs.filter((q, i) => q.answer === answers[i]).length;
   const score = qs.length ? Math.round((correct / qs.length) * 100) : 100;
   const best = Math.max(score, p.best_score ?? 0);
   const complete = score >= pass ? 1 : p.complete;
+  if (reading && complete && !p.complete) await run('UPDATE progress SET watched=? WHERE user_id=? AND lesson_id=?', lesson.duration, user.id, lesson.id);
   await batch([
     stmt('UPDATE progress SET score=?,best_score=?,attempts=attempts+1,updated=? WHERE user_id=? AND lesson_id=?', score, best, now(), user.id, lesson.id),
     stmt('INSERT INTO quiz_attempts (id,user_id,lesson_id,answers,score,passed,created) VALUES (?,?,?,?,?,?,?)', uid(), user.id, lesson.id, JSON.stringify(answers.slice(0, 50)), score, score >= pass ? 1 : 0, now()),

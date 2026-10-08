@@ -1,6 +1,6 @@
 'use client';
-import { BookOpen, Star, X, CheckCircle2, type LucideIcon } from 'lucide-react';
-import type { ReactNode, CSSProperties } from 'react';
+import { BookOpen, Star, X, CheckCircle2, AlertCircle, Info, RefreshCw, type LucideIcon } from 'lucide-react';
+import { Component, useEffect, useRef, useState, type ReactNode, type CSSProperties, type ErrorInfo } from 'react';
 import { useEdu } from '../../lib/edu-store';
 export { CharacterAvatar } from '../../app/account-settings';
 
@@ -103,9 +103,18 @@ export function Tabs<T extends string>({ items, value, onChange }: { items: [T, 
 }
 
 export function Modal({ title, wide = false, children, onClose }: { title: string; wide?: boolean; children: ReactNode; onClose: () => void }) {
+  const ref = useRef<HTMLElement>(null);
+  useEffect(() => {
+    // 첫 입력에 포커스, 배경 스크롤 잠금
+    const el = ref.current?.querySelector<HTMLElement>('input:not([type=hidden]):not([type=checkbox]):not([type=radio]), textarea, select');
+    el?.focus();
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, []);
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <section role="dialog" aria-modal="true" aria-label={title} className={'modal ' + (wide ? 'wide' : '')} onClick={(e) => e.stopPropagation()}>
+      <section ref={ref} role="dialog" aria-modal="true" aria-label={title} className={'modal ' + (wide ? 'wide' : '')} onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <h2>{title}</h2>
           <button type="button" onClick={onClose} aria-label="닫기"><X /></button>
@@ -119,13 +128,33 @@ export function Modal({ title, wide = false, children, onClose }: { title: strin
 export function Toast() {
   const { toast, setToast } = useEdu();
   if (!toast) return null;
+  const Icon = toast.tone === 'error' ? AlertCircle : toast.tone === 'info' ? Info : CheckCircle2;
   return (
-    <div className="toast" role="status">
-      <CheckCircle2 size={18} />
-      {toast}
+    <div className={'toast ' + toast.tone} role={toast.tone === 'error' ? 'alert' : 'status'}>
+      <Icon size={18} />
+      {toast.text}
       <button onClick={() => setToast('')} aria-label="알림 닫기"><X size={17} /></button>
     </div>
   );
+}
+
+/** 화면 일부에서 오류가 나도 앱 전체가 멈추지 않도록 감싼다. */
+export class ErrorBoundary extends Component<{ children: ReactNode; resetKey?: string }, { error: Error | null }> {
+  state = { error: null as Error | null };
+  static getDerivedStateFromError(error: Error) { return { error }; }
+  componentDidCatch(error: Error, info: ErrorInfo) { console.error('화면 오류', error, info.componentStack); }
+  componentDidUpdate(prev: { resetKey?: string }) { if (prev.resetKey !== this.props.resetKey && this.state.error) this.setState({ error: null }); }
+  render() {
+    if (!this.state.error) return this.props.children;
+    return (
+      <div className="empty error-box" role="alert">
+        <AlertCircle size={34} />
+        <h3>화면을 표시하는 중 문제가 생겼어요</h3>
+        <p>{this.state.error.message}</p>
+        <button className="button secondary small" onClick={() => this.setState({ error: null })}><RefreshCw size={14} /> 다시 시도</button>
+      </div>
+    );
+  }
 }
 
 export function Field({ label, children, hint, style }: { label: ReactNode; children: ReactNode; hint?: string; style?: CSSProperties }) {
@@ -154,3 +183,13 @@ export function Ring({ value, size = 72, stroke = 7, children }: { value: number
 
 export const statusLabel: Record<string, string> = { active: '학습 가능', pending: '승인 대기', suspended: '이용 중지' };
 export const statusTone: Record<string, 'good' | 'warn' | 'bad'> = { active: 'good', pending: 'warn', suspended: 'bad' };
+
+/** 긴 목록을 단계적으로 보여준다. 반환: [보이는 항목, 더보기 버튼(없으면 null)] */
+export function useLimit<T>(items: T[], step = 24): [T[], ReactNode] {
+  const [limit, setLimit] = useState(step);
+  const visible = items.slice(0, limit);
+  const more = items.length > limit ? (
+    <div className="load-more"><button className="button secondary small" onClick={() => setLimit((n) => n + step)}>더 보기 ({items.length - limit}개 남음)</button></div>
+  ) : null;
+  return [visible, more];
+}

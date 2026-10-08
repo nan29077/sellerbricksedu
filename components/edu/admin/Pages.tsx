@@ -123,7 +123,7 @@ export function AdminAi() {
           <label>{mode === 'chapters' || mode === 'quiz' ? '강의 대본 또는 내용' : '교육 주제'}<textarea rows={8} value={topic} onChange={(e) => setTopic(e.target.value)} placeholder={mode === 'draft' ? '예: 첫 라이브 방송을 준비하는 신규 셀러에게 30초 오프닝을 구성하는 방법을 알려주세요.' : '강의 내용이나 대본을 붙여 넣으세요.'} /></label>
           <div className="info-note">{data.hasAiKey ? 'AI가 연결되어 있습니다. 생성할 때 연결된 계정의 API 사용료가 발생합니다.' : 'AI가 아직 연결되지 않았습니다. 연동 설정에서 API 키를 등록해 주세요.'}</div>
           <div className="between">
-            <Button disabled={busy || !topic.trim() || !data.hasAiKey} onClick={async () => { try { const r = await act('ai', { topic, mode }); setText(r.text); setJson(r.json ?? null); } catch (e: any) { setToast(e.message); } }}><Sparkles size={17} />{busy ? '만드는 중…' : '초안 생성'}</Button>
+            <Button disabled={busy || !topic.trim() || !data.hasAiKey} onClick={async () => { try { const r = await act('ai', { topic, mode }); setText(r.text); setJson(r.json ?? null); } catch (e: any) { setToast(e.message, 'error'); } }}><Sparkles size={17} />{busy ? '만드는 중…' : '초안 생성'}</Button>
             <button className="text-link" onClick={() => go('/admin/settings')}>AI 연결 설정</button>
           </div>
         </div>

@@ -2,7 +2,7 @@
 import { EduProvider, useEdu } from '../lib/edu-store';
 import MainIntroduction from './main-introduction';
 import AccountSettings from './account-settings';
-import { Button, Empty, Logo, PageHead, Toast } from '../components/edu/ui';
+import { Button, Empty, ErrorBoundary, Logo, PageHead, Toast } from '../components/edu/ui';
 import { PublicLayout } from '../components/edu/shell/PublicLayout';
 import { PortalLayout } from '../components/edu/shell/PortalLayout';
 import { LoginPage, ResetPage } from '../components/edu/public/LoginPage';
@@ -83,7 +83,7 @@ function Router() {
     else if (p === '/admin/ai') body = <AdminAi />;
     else if (p === '/admin/settings') body = superAdmin ? <AdminSettings /> : <Empty title="최고 관리자 전용 화면입니다" description="연동 설정은 최고 관리자만 변경할 수 있어요." />;
     else body = <Empty title="화면을 찾을 수 없어요" description="왼쪽 메뉴에서 필요한 기능을 선택해 주세요." />;
-    return <PortalLayout>{body}</PortalLayout>;
+    return <PortalLayout><ErrorBoundary resetKey={path}><div className="page-enter" key={path}>{body}</div></ErrorBoundary></PortalLayout>;
   }
 
   return <PublicLayout><main className="container section"><Empty title="페이지를 찾을 수 없어요" description="주소를 확인하거나 홈으로 이동해 주세요." action={<Button onClick={() => go('/')}>홈으로</Button>} /></main></PublicLayout>;
@@ -97,9 +97,9 @@ function Home() {
 export default function Edu() {
   return (
     <EduProvider>
-      <RouterWithHome />
+      <ErrorBoundary><RouterWithHome /></ErrorBoundary>
       <Toast />
-      <EduModals />
+      <ErrorBoundary><EduModals /></ErrorBoundary>
     </EduProvider>
   );
 }
