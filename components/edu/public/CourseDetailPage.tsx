@@ -4,6 +4,7 @@ import { ChevronLeft, Video, Clock, CheckCircle2, Play, Target, Lock, Eye, Clipb
 import { useEdu } from '../../../lib/edu-store';
 import { fmt, fmtLong, fmtShort } from '../../../lib/learning';
 import { Button, CharacterAvatar, Empty, Pill, ProgressBar, Stars } from '../ui';
+import { ResetCourseButton } from '../learn/EventsPaths';
 
 export function CourseDetailPage({ id }: { id: string }) {
   const { courses, ls, pfor, pct, user, go, data, perform, busy } = useEdu();
@@ -48,6 +49,7 @@ export function CourseDetailPage({ id }: { id: string }) {
             {!user && items.some((l) => l.preview && l.video) && <Button secondary onClick={() => go('/lesson/' + items.find((l) => l.preview && l.video)!.id)}><Eye size={16} /> 미리보기</Button>}
           </div>
           {c.instructor && <p className="small-muted">강사 · {c.instructor}</p>}
+          {user && started && <ResetCourseButton courseId={c.id} />}
         </div>
         <img src={`/images/banner-${c.image}.webp`} alt={c.title} />
       </div>

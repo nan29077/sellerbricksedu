@@ -95,7 +95,10 @@ export async function quiz({ body, user, settings }: AuthedCtx) {
   const score = qs.length ? Math.round((correct / qs.length) * 100) : 100;
   const best = Math.max(score, p.best_score ?? 0);
   const complete = score >= pass ? 1 : p.complete;
-  await run('UPDATE progress SET score=?,best_score=?,attempts=attempts+1,updated=? WHERE user_id=? AND lesson_id=?', score, best, now(), user.id, lesson.id);
+  await batch([
+    stmt('UPDATE progress SET score=?,best_score=?,attempts=attempts+1,updated=? WHERE user_id=? AND lesson_id=?', score, best, now(), user.id, lesson.id),
+    stmt('INSERT INTO quiz_attempts (id,user_id,lesson_id,answers,score,passed,created) VALUES (?,?,?,?,?,?,?)', uid(), user.id, lesson.id, JSON.stringify(answers.slice(0, 50)), score, score >= pass ? 1 : 0, now()),
+  ]);
   await markComplete(user.id, lesson, p, complete);
   await logActivity(user.id, 'quiz', `${lesson.title} ${score}점`);
   return out({
@@ -107,6 +110,41 @@ export async function quiz({ body, user, settings }: AuthedCtx) {
     bestScore: best,
     results: qs.map((q, i) => ({ correct: q.answer === answers[i], answer: q.answer, explanation: q.explanation })),
   });
+}
+
+/** 과정 진도 초기화(재수강) — 수료증은 유지 */
+export async function progressReset({ body, user }: AuthedCtx) {
+  const courseId = str(body.courseId, 100);
+  const ids = (await all<{ id: string }>('SELECT id FROM lessons WHERE course_id=?', courseId)).map((l) => l.id);
+  if (!ids.length) throw new HttpError(404, '과정을 찾을 수 없습니다.');
+  const inList = `(${ids.map(() => '?').join(',')})`;
+  await batch([
+    stmt(`UPDATE progress SET position=0,watched=0,complete=0,score=NULL,completed_at='',updated=? WHERE user_id=? AND lesson_id IN ${inList}`, now(), user.id, ...ids),
+  ]);
+  await logActivity(user.id, 'progress_reset', courseId);
+  return out({ ok: true });
+}
+
+/** 라이브 세션 참석 신청/취소 */
+export async function rsvp({ body, user }: AuthedCtx) {
+  const id = str(body.eventId, 100);
+  const ev = await first<any>('SELECT * FROM events WHERE id=?', id);
+  if (!ev) throw new HttpError(404, '일정을 찾을 수 없습니다.');
+  if (ev.cohort_id) {
+    const m = await first('SELECT 1 FROM memberships WHERE user_id=? AND cohort_id=?', user.id, ev.cohort_id);
+    if (!m && user.role === 'student') throw new HttpError(403, '해당 기수 교육생만 신청할 수 있습니다.');
+  }
+  const existing = await first('SELECT 1 FROM event_rsvps WHERE event_id=? AND user_id=?', id, user.id);
+  if (existing) {
+    await run('DELETE FROM event_rsvps WHERE event_id=? AND user_id=?', id, user.id);
+    return out({ ok: true, going: false });
+  }
+  if (ev.capacity > 0) {
+    const n = await first<{ n: number }>('SELECT COUNT(*) AS n FROM event_rsvps WHERE event_id=?', id);
+    if ((n?.n || 0) >= ev.capacity) throw new HttpError(400, '정원이 마감되었습니다.');
+  }
+  await run('INSERT INTO event_rsvps (event_id,user_id,created) VALUES (?,?,?)', id, user.id, now());
+  return out({ ok: true, going: true });
 }
 
 export async function review({ body, user }: AuthedCtx) {

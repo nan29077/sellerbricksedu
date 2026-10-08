@@ -5,25 +5,30 @@ import { useEdu } from '../../../lib/edu-store';
 import { CATEGORIES, LEVELS, PLATFORMS, platformName, fmt } from '../../../lib/learning';
 import { Button, Modal, Pill } from '../ui';
 
-const TITLES: Record<string, string> = { nudge: '교육생에게 알림 보내기', course: '교육 과정 편집', lesson: '영상 강의와 확인 문제', reply: '질문 답변', cohort: '교육 기수 편집', channel: '나의 SNS 채널', progress: '학습 현황', announcement: '공지 작성', assignment: '과제 편집', review_submission: '과제 검토', import: '강의 일괄 등록', invite: '교육생 직접 등록', ai: 'AI로 확인 문제 생성' };
+const TITLES: Record<string, string> = { post: '라운지 글쓰기', event: '라이브 세션·일정', path: '학습 경로', faq: 'FAQ', invite_bulk: '교육생 CSV 일괄 등록', content_import: '콘텐츠 JSON 가져오기', nudge: '교육생에게 알림 보내기', course: '교육 과정 편집', lesson: '영상 강의와 확인 문제', reply: '질문 답변', cohort: '교육 기수 편집', channel: '나의 SNS 채널', progress: '학습 현황', announcement: '공지 작성', assignment: '과제 편집', review_submission: '과제 검토', import: '강의 일괄 등록', invite: '교육생 직접 등록', ai: 'AI로 확인 문제 생성' };
 
 export function EduModals() {
-  const { modal, setModal, editor, setEditor, perform, busy, courses, lessons, data, ls, pct, setBusy, load, setToast, act, openModal } = useEdu();
+  const store = useEdu();
+  const storeRef = store;
+  const { modal, setModal, editor, setEditor, perform, busy, courses, lessons, data, ls, pct, setBusy, load, setToast, act, openModal } = store;
   const [aiText, setAiText] = useState('');
   if (!modal) return null;
   const close = () => setModal(null);
   const set = (k: string, v: any) => setEditor({ ...editor, [k]: v });
-  const wide = ['lesson', 'progress', 'import', 'announcement', 'assignment'].includes(modal.type);
+  const wide = ['lesson', 'progress', 'import', 'announcement', 'assignment', 'post', 'event', 'path', 'invite_bulk', 'content_import'].includes(modal.type);
   const title = modal.type === 'progress' ? `${modal.user?.name}님의 학습 현황` : TITLES[modal.type] || '설정';
 
-  const actionOf: Record<string, string> = { nudge: 'nudge', channel: 'channel', course: 'course', lesson: 'lesson', cohort: 'cohort', reply: 'reply', announcement: 'announcement', assignment: 'assignment', review_submission: 'review_submission', import: 'lessons_import', invite: 'invite' };
-  const successOf: Record<string, string> = { nudge: '알림을 보냈습니다.', reply: '답변을 등록했습니다. 교육생에게 알림이 전달됩니다.', announcement: '공지를 저장했습니다.', review_submission: '검토 결과를 저장했습니다. 교육생에게 알림이 전달됩니다.', import: '강의를 일괄 등록했습니다.', invite: '교육생을 등록했습니다. 비밀번호 재설정 링크를 전달해 주세요.' };
+  const actionOf: Record<string, string> = { post: 'post', event: 'event', path: 'path', faq: 'faq', invite_bulk: 'invite_bulk', content_import: 'content_import', nudge: 'nudge', channel: 'channel', course: 'course', lesson: 'lesson', cohort: 'cohort', reply: 'reply', announcement: 'announcement', assignment: 'assignment', review_submission: 'review_submission', import: 'lessons_import', invite: 'invite' };
+  const successOf: Record<string, string> = { post: '게시글을 저장했습니다.', event: '일정을 저장했습니다.', path: '학습 경로를 저장했습니다.', faq: 'FAQ를 저장했습니다.', invite_bulk: '일괄 등록을 완료했습니다.', content_import: '콘텐츠를 가져왔습니다.', nudge: '알림을 보냈습니다.', reply: '답변을 등록했습니다. 교육생에게 알림이 전달됩니다.', announcement: '공지를 저장했습니다.', review_submission: '검토 결과를 저장했습니다. 교육생에게 알림이 전달됩니다.', import: '강의를 일괄 등록했습니다.', invite: '교육생을 등록했습니다. 비밀번호 재설정 링크를 전달해 주세요.' };
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     const a = actionOf[modal!.type];
     if (!a) return;
     const r = await perform(a, { ...editor }, successOf[a] || '저장되었습니다.');
+    if (r && a === 'post' && r.id && !editor.id) { const { go } = storeRef; go('/learn/lounge/' + r.id); }
+    if (r && a === 'invite_bulk') setToast(`${r.created}명 등록 완료${r.results.filter((x: any) => !x.ok).length ? ` · 실패 ${r.results.filter((x: any) => !x.ok).length}건 (${r.results.filter((x: any) => !x.ok).slice(0, 3).map((x: any) => x.email + ':' + x.reason).join(', ')})` : ''}`);
+    if (r && a === 'content_import') setToast(`${r.count}건을 가져왔습니다.`);
     if (r && a === 'invite' && r.userId) {
       try { const l = await act('reset_link', { userId: r.userId }); await navigator.clipboard?.writeText(l.link); setToast('교육생을 등록하고 비밀번호 설정 링크를 복사했습니다. 교육생에게 전달해 주세요.'); } catch {}
     }
@@ -137,6 +142,65 @@ export function EduModals() {
             <label>이동 링크<select value={editor.link} onChange={(e) => set('link', e.target.value)}><option value="/learn">학습 대시보드</option><option value="/learn/courses">나의 강의실</option><option value="/learn/assignments">과제</option><option value="/learn/notices">공지사항</option><option value="/learn/questions">학습 Q&A</option></select></label>
           </>
         )}
+        {modal.type === 'post' && (
+          <>
+            <label>분류<select value={editor.category} onChange={(e) => set('category', e.target.value)}>{['자유', '질문', '방송 후기', '팁 공유', '상품 추천', ...(store.admin ? ['공지'] : [])].map((c) => <option key={c}>{c}</option>)}</select></label>
+            <label>제목<input required value={editor.title} onChange={(e) => set('title', e.target.value)} maxLength={120} /></label>
+            <label>내용<textarea required rows={10} value={editor.body} onChange={(e) => set('body', e.target.value)} maxLength={10000} placeholder="방송 후기, 궁금한 점, 도움이 된 팁을 자유롭게 나눠주세요. 개인정보와 타인 비방은 삼가 주세요." /></label>
+          </>
+        )}
+        {modal.type === 'event' && (
+          <>
+            <label>제목<input required value={editor.title} onChange={(e) => set('title', e.target.value)} placeholder="예: 1기 오리엔테이션 라이브" /></label>
+            <label>안내<textarea rows={4} value={editor.description} onChange={(e) => set('description', e.target.value)} /></label>
+            <div className="form-two">
+              <label>시작<input type="datetime-local" required value={editor.starts} onChange={(e) => set('starts', e.target.value)} /></label>
+              <label>종료 (선택)<input type="datetime-local" value={editor.ends} min={editor.starts || undefined} onChange={(e) => set('ends', e.target.value)} /></label>
+            </div>
+            <div className="form-two">
+              <label>세션 링크 (Zoom·유튜브 등)<input type="url" value={editor.link} onChange={(e) => set('link', e.target.value)} placeholder="https://" /></label>
+              <label>장소<input value={editor.location} onChange={(e) => set('location', e.target.value)} placeholder="온라인" /></label>
+            </div>
+            <div className="form-two">
+              <label>대상<select value={editor.cohortId || ''} onChange={(e) => set('cohortId', e.target.value)}><option value="">전체 교육생</option>{(data?.cohorts ?? []).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+              <label>정원 (0 = 제한 없음)<input type="number" min={0} value={editor.capacity} onChange={(e) => set('capacity', e.target.value)} /></label>
+            </div>
+            {!editor.id && <label className="check-label"><input type="checkbox" checked={editor.notify !== false} onChange={(e) => set('notify', e.target.checked)} /><span>대상 교육생에게 알림 보내기</span></label>}
+            <p className="small-muted">세션 링크는 참석 신청한 교육생에게만 표시됩니다.</p>
+          </>
+        )}
+        {modal.type === 'path' && (
+          <>
+            <label>경로 이름<input required value={editor.title} onChange={(e) => set('title', e.target.value)} placeholder="예: 첫 라이브 4주 완성" /></label>
+            <label>설명<textarea rows={3} value={editor.description} onChange={(e) => set('description', e.target.value)} /></label>
+            <fieldset className="path-picker"><legend>과정 순서 (누르면 추가 · 다시 누르면 제거)</legend>
+              <ol>{(editor.courses || []).map((id: string, i: number) => { const c = courses.find((x) => x.id === id); return <li key={id}><span>{i + 1}</span>{c?.title || id}<button type="button" onClick={() => set('courses', editor.courses.filter((x: string) => x !== id))} aria-label="제거">×</button></li>; })}</ol>
+              <div className="chips">{courses.filter((c) => !(editor.courses || []).includes(c.id)).map((c) => <button type="button" key={c.id} className="chip" onClick={() => set('courses', [...(editor.courses || []), c.id])}>+ {c.title}</button>)}</div>
+            </fieldset>
+            <div className="form-two"><label>표시 순서<input type="number" min={1} value={editor.position} onChange={(e) => set('position', e.target.value)} /></label><label className="check-label"><input type="checkbox" checked={!!editor.published} onChange={(e) => set('published', e.target.checked ? 1 : 0)} /><span>교육생에게 공개</span></label></div>
+          </>
+        )}
+        {modal.type === 'faq' && (
+          <>
+            <label>질문<input required value={editor.question} onChange={(e) => set('question', e.target.value)} maxLength={300} /></label>
+            <label>답변<textarea required rows={5} value={editor.answer} onChange={(e) => set('answer', e.target.value)} maxLength={3000} /></label>
+            <div className="form-two"><label>순서<input type="number" min={1} value={editor.position} onChange={(e) => set('position', e.target.value)} /></label><label className="check-label"><input type="checkbox" checked={!!editor.published} onChange={(e) => set('published', e.target.checked ? 1 : 0)} /><span>공개</span></label></div>
+          </>
+        )}
+        {modal.type === 'invite_bulk' && (
+          <>
+            <p className="muted">한 줄에 한 명씩 <code>이름, 이메일, 기수명</code> 형식으로 붙여 넣으세요. 기수는 생략 가능하며 즉시 학습 가능 상태로 등록됩니다. 등록 후 교육생은 로그인 화면의 &lsquo;비밀번호를 잊으셨나요?&rsquo;로 비밀번호를 설정합니다.</p>
+            <label>기본 기수 (CSV에 없을 때)<select value={editor.cohortId || ''} onChange={(e) => set('cohortId', e.target.value)}><option value="">미배정</option>{(data?.cohorts ?? []).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+            <label>CSV<textarea required rows={10} value={editor.csv || ''} onChange={(e) => set('csv', e.target.value)} placeholder={'김셀러, seller1@example.com, 1기\n이라이브, seller2@example.com'} /></label>
+          </>
+        )}
+        {modal.type === 'content_import' && (
+          <>
+            <p className="muted">내보내기한 JSON을 붙여 넣으면 같은 ID의 과정·강의는 덮어쓰고 새 항목은 추가됩니다. 교육생 진도는 영향받지 않습니다.</p>
+            <label>JSON<textarea required rows={12} value={editor.data || ''} onChange={(e) => set('data', e.target.value)} /></label>
+            <input type="file" accept="application/json" onChange={(e) => { const f = e.target.files?.[0]; if (!f) return; f.text().then((t) => set('data', t)); }} />
+          </>
+        )}
         {modal.type === 'reply' && <label>답변 내용<textarea required rows={7} value={editor.reply} onChange={(e) => set('reply', e.target.value)} placeholder="교육생에게 전달될 답변을 작성하세요. 저장하면 알림이 전송됩니다." /></label>}
 
         {modal.type === 'announcement' && (
@@ -203,7 +267,7 @@ export function EduModals() {
 }
 
 function LessonForm({ editor, set }: { editor: any; set: (k: string, v: any) => void }) {
-  const { courses, ls, setBusy, load, setEditor, setToast, data, openModal } = useEdu();
+  const { courses, ls, setBusy, load, setEditor, setToast, data, openModal, perform } = useEdu();
   const [tab, setTab] = useState<'basic' | 'chapters' | 'quiz' | 'resource'>('basic');
   let qs: any[] = [];
   let qsError = false;
@@ -299,6 +363,15 @@ function LessonForm({ editor, set }: { editor: any; set: (k: string, v: any) => 
       </div>
       <div hidden={tab !== 'resource'}>
         <label>학습 자료 (체크리스트·템플릿)<textarea rows={6} value={editor.resource} onChange={(e) => set('resource', e.target.value)} /></label>
+        <div className="upload-box small">
+          <b>첨부 파일 (PDF·이미지·문서, 20MB)</b>
+          {editor.id ? (
+            <>
+              <ul className="file-list">{(data?.lessonFiles ?? []).filter((f) => f.lesson_id === editor.id).map((f) => <li key={f.id}><a href={'/api/media/' + f.id} target="_blank" rel="noopener noreferrer">{f.name}</a><small>{Math.round(f.size / 1024)}KB</small><button type="button" className="icon-button" aria-label="삭제" onClick={() => perform('lesson_file_delete', { id: f.id }, '파일을 삭제했습니다.')}><Trash2 size={14} /></button></li>)}</ul>
+              <input type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.txt,.docx,.xlsx,.pptx,.zip" onChange={async (e) => { const file = e.target.files?.[0]; if (!file) return; setBusy(true); try { const fd = new FormData(); fd.set('file', file); fd.set('lessonId', editor.id); fd.set('kind', 'file'); const r = await fetch('/api/edu', { method: 'POST', body: fd }); const j: any = await r.json(); if (!r.ok) throw Error(j.error); await load(); setToast('파일을 첨부했습니다.'); } catch (err: any) { setToast(err.message); } finally { setBusy(false); e.target.value = ''; } }} />
+            </>
+          ) : <small>강의를 먼저 저장하면 파일을 첨부할 수 있어요.</small>}
+        </div>
         <label>강의 대본 (선택 · 교육생에게 &lsquo;대본&rsquo; 탭으로 표시)<textarea rows={8} value={editor.transcript || ''} onChange={(e) => set('transcript', e.target.value)} /></label>
       </div>
     </>

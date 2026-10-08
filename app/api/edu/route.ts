@@ -1,4 +1,4 @@
-import { seed, bucket, run, first, HttpError } from '../../../lib/server/db';
+import { seed, bucket, run, first, all, uid, now, HttpError } from '../../../lib/server/db';
 import { out, sameOrigin } from '../../../lib/server/http';
 import { current, isStaff } from '../../../lib/server/auth';
 import { getSettings } from '../../../lib/server/settings';
@@ -33,6 +33,13 @@ const ACTIONS: Record<string, ['public' | 'user' | 'staff' | 'admin', Handler]> 
   quiz: ['user', learning.quiz as Handler],
   review: ['user', learning.review as Handler],
   submit: ['user', learning.submit as Handler],
+  progress_reset: ['user', learning.progressReset as Handler],
+  rsvp: ['user', learning.rsvp as Handler],
+  post: ['user', community.post as Handler],
+  post_delete: ['user', community.postDelete as Handler],
+  comment: ['user', community.comment as Handler],
+  comment_delete: ['user', community.commentDelete as Handler],
+  like: ['user', community.like as Handler],
   question: ['user', community.question as Handler],
   question_delete: ['user', community.questionDelete as Handler],
   vote: ['user', community.vote as Handler],
@@ -60,6 +67,15 @@ const ACTIONS: Record<string, ['public' | 'user' | 'staff' | 'admin', Handler]> 
   assignment_delete: ['staff', admin.assignmentDelete as Handler],
   review_submission: ['staff', admin.reviewSubmission as Handler],
   ai: ['staff', ai as Handler],
+  path: ['staff', admin.path as Handler],
+  event: ['staff', admin.event as Handler],
+  event_delete: ['staff', admin.eventDelete as Handler],
+  event_remind: ['staff', admin.eventRemind as Handler],
+  faq: ['staff', admin.faq as Handler],
+  faq_delete: ['staff', admin.faqDelete as Handler],
+  invite_bulk: ['staff', admin.inviteBulk as Handler],
+  lesson_file_delete: ['staff', admin.lessonFileDelete as Handler],
+  post_update: ['staff', community.postUpdate as Handler],
   // 최고 관리자 전용 (삭제·권한·설정)
   cohort_delete: ['admin', admin.cohortDelete as Handler],
   member_delete: ['admin', admin.memberDelete as Handler],
@@ -67,6 +83,8 @@ const ACTIONS: Record<string, ['public' | 'user' | 'staff' | 'admin', Handler]> 
   course_delete: ['admin', admin.courseDelete as Handler],
   lesson_delete: ['admin', admin.lessonDelete as Handler],
   settings: ['admin', admin.settings as Handler],
+  path_delete: ['admin', admin.pathDelete as Handler],
+  content_import: ['admin', admin.importContent as Handler],
 };
 
 export async function GET(req: Request) {
@@ -79,6 +97,18 @@ export async function GET(req: Request) {
       return out(c ? { ok: true, certificate: c } : { ok: false, error: '수료증 번호를 찾을 수 없습니다.' }, c ? 200 : 404);
     }
     const user = await current(req);
+    const postId = url.searchParams.get('post');
+    if (postId) {
+      if (!user) return out({ error: '로그인이 필요합니다.' }, 401);
+      const post = await first<any>('SELECT posts.*, users.name, users.role AS author_role, COALESCE(user_profiles.avatar,0) AS avatar FROM posts JOIN users ON users.id=posts.user_id LEFT JOIN user_profiles ON user_profiles.user_id=users.id WHERE posts.id=?', postId);
+      if (!post) return out({ error: '게시글을 찾을 수 없습니다.' }, 404);
+      const comments = await all('SELECT comments.*, users.name, users.role AS author_role, COALESCE(user_profiles.avatar,0) AS avatar FROM comments JOIN users ON users.id=comments.user_id LEFT JOIN user_profiles ON user_profiles.user_id=users.id WHERE post_id=? ORDER BY created', postId);
+      return out({ post, comments });
+    }
+    if (url.searchParams.get('export') === 'content') {
+      if (user?.role !== 'admin') return out({ error: '최고 관리자 권한이 필요합니다.' }, 403);
+      return Response.json(await admin.exportContent(), { headers: { 'Content-Disposition': `attachment; filename="sellerbricks-edu-content-${new Date().toISOString().slice(0, 10)}.json"`, 'Cache-Control': 'private, no-store' } });
+    }
     return out(await buildPayload(user));
   } catch (e) {
     console.error('edu GET failed', e);
@@ -98,6 +128,18 @@ export async function POST(req: Request) {
       if (!isStaff(u?.role)) return out({ error: '관리자 권한이 필요합니다.' }, 403);
       const f = await req.formData();
       const file = f.get('file') as File | null, id = String(f.get('lessonId') || '');
+      if (f.get('kind') === 'file') {
+        // 강의 자료 파일 (PDF·이미지·문서, 20MB)
+        const okTypes = ['application/pdf', 'image/png', 'image/jpeg', 'image/webp', 'text/plain', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.openxmlformats-officedocument.presentationml.presentation', 'application/zip'];
+        if (!file || file.size > 20 * 1024 * 1024 || !okTypes.includes(file.type)) return out({ error: '20MB 이하의 PDF·이미지·문서 파일을 선택해 주세요.' }, 400);
+        if (!(await first('SELECT id FROM lessons WHERE id=?', id))) return out({ error: '강의를 찾을 수 없습니다.' }, 404);
+        const b = bucket();
+        if (!b) return out({ error: '파일 저장소가 연결되지 않았습니다.' }, 503);
+        const key = 'file-' + uid();
+        await b.put(key, file.stream(), { httpMetadata: { contentType: file.type, contentDisposition: `attachment; filename*=UTF-8''${encodeURIComponent(file.name)}` } });
+        await run('INSERT INTO lesson_files (id,lesson_id,name,key,size,type,created) VALUES (?,?,?,?,?,?,?)', uid(), id, file.name.slice(0, 200), key, file.size, file.type, now());
+        return out({ ok: true });
+      }
       const maxMb = Number(settings.max_video_mb) || 50;
       if (!file || file.size > maxMb * 1024 * 1024 || !['video/mp4', 'video/webm'].includes(file.type)) return out({ error: `${maxMb}MB 이하의 MP4 또는 WebM 영상을 선택해 주세요.` }, 400);
       if (!(await first('SELECT id FROM lessons WHERE id=?', id))) return out({ error: '강의를 찾을 수 없습니다.' }, 404);

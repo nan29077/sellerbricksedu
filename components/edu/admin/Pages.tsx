@@ -4,6 +4,7 @@ import { Plus, GraduationCap, PenLine, Trash2, Pin, Megaphone, ClipboardList, Ex
 import { useEdu } from '../../../lib/edu-store';
 import { fmtShort, relTime } from '../../../lib/learning';
 import { Button, Empty, PageHead, Pill, ProgressBar, Tabs } from '../ui';
+import { ContentTransfer } from './Extras';
 
 export function AdminCohorts() {
   const { data, lessons, openModal, perform, ask, go, superAdmin } = useEdu();
@@ -195,6 +196,7 @@ export function AdminSettings() {
         </div>
         <button className="button" disabled={busy} type="submit">설정 저장</button>
       </form>
+      <ContentTransfer />
     </>
   );
 }

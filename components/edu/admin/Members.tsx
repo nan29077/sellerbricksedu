@@ -1,6 +1,6 @@
 'use client';
 import { useMemo, useState } from 'react';
-import { Search, Download, KeyRound, Trash2, ShieldCheck, CheckSquare, Square, UserPlus, Copy, BellRing, StickyNote, Shield } from 'lucide-react';
+import { Search, Download, KeyRound, Trash2, ShieldCheck, CheckSquare, Square, UserPlus, Copy, BellRing, StickyNote, Shield, Upload } from 'lucide-react';
 import { useEdu } from '../../../lib/edu-store';
 import { ROLES } from '../../../lib/constants';
 import { downloadCsv, fmtLong, fmtShort, relTime } from '../../../lib/learning';
@@ -42,7 +42,7 @@ export function AdminMembers({ report = false }: { report?: boolean }) {
   return (
     <>
       <PageHead title={report ? '교육생 학습 현황' : '교육생 관리'} sub={report ? '교육생별 시청 시간, 강의 완료와 퀴즈 결과를 확인하고 CSV로 내려받으세요.' : '가입 승인, 기수 배정, 계정 상태, 메모와 독려 알림을 관리하세요. 여러 명을 선택해 한 번에 처리할 수 있어요.'}
-        action={<div className="head-actions"><Button small secondary onClick={exportCsv}><Download size={15} /> CSV</Button>{!report && <Button small onClick={() => openModal('invite', { name: '', email: '', cohortId: '' })}><UserPlus size={15} /> 교육생 직접 등록</Button>}</div>} />
+        action={<div className="head-actions"><Button small secondary onClick={exportCsv}><Download size={15} /> CSV</Button>{!report && <Button small secondary onClick={() => openModal('invite_bulk', { csv: '', cohortId: '' })}><Upload size={15} /> CSV 일괄 등록</Button>}{!report && <Button small onClick={() => openModal('invite', { name: '', email: '', cohortId: '' })}><UserPlus size={15} /> 교육생 직접 등록</Button>}</div>} />
       {!report && students.filter((u) => u.status === 'pending').length > 0 && status === 'all' && (
         <div className="info-note warn"><ShieldCheck size={17} /> 승인 대기 교육생 {students.filter((u) => u.status === 'pending').length}명이 있어요. <button className="text-link" onClick={() => setStatus('pending')}>대기 목록 보기</button></div>
       )}

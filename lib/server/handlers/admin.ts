@@ -316,3 +316,121 @@ export async function settings({ body }: AuthedCtx) {
   if (body.clear_ai_key) await run(`DELETE FROM settings WHERE id='ai_key'`);
   return out({ ok: true });
 }
+
+// ───────── 학습 경로 ─────────
+export async function path({ body }: AuthedCtx) {
+  const title = str(body.title, 120);
+  if (!title) throw new HttpError(400, '경로 이름을 입력해 주세요.');
+  let courses: string[] = [];
+  try { courses = (typeof body.courses === 'string' ? JSON.parse(body.courses) : body.courses || []).map(String); } catch { throw new HttpError(400, '과정 목록을 확인해 주세요.'); }
+  const valid = await all<{ id: string }>('SELECT id FROM courses');
+  courses = courses.filter((c) => valid.some((v) => v.id === c));
+  if (!courses.length) throw new HttpError(400, '과정을 1개 이상 선택해 주세요.');
+  await run('INSERT INTO paths (id,title,description,courses,position,published,created) VALUES (?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET title=excluded.title,description=excluded.description,courses=excluded.courses,position=excluded.position,published=excluded.published',
+    body.id || uid(), title, str(body.description, 2000), JSON.stringify(courses), num(body.position, 1) || 1, bool(body.published), now());
+  return out({ ok: true });
+}
+export async function pathDelete({ body }: AuthedCtx) {
+  await run('DELETE FROM paths WHERE id=?', str(body.id, 100));
+  return out({ ok: true });
+}
+
+// ───────── 라이브 세션·일정 ─────────
+export async function event({ body, user }: AuthedCtx) {
+  const title = str(body.title, 120), starts = str(body.starts, 30);
+  if (!title || !starts) throw new HttpError(400, '제목과 시작 일시를 입력해 주세요.');
+  const link = str(body.link, 500);
+  if (link && !/^https?:\/\//.test(link)) throw new HttpError(400, '세션 링크는 http(s):// 로 시작해야 합니다.');
+  const cohortId = body.cohortId ? str(body.cohortId, 100) : null;
+  const id = body.id || uid();
+  const isNew = !body.id;
+  await run('INSERT INTO events (id,title,description,starts,ends,link,location,cohort_id,capacity,created_by,created) VALUES (?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET title=excluded.title,description=excluded.description,starts=excluded.starts,ends=excluded.ends,link=excluded.link,location=excluded.location,cohort_id=excluded.cohort_id,capacity=excluded.capacity',
+    id, title, str(body.description, 5000), starts, str(body.ends, 30), link, str(body.location, 200), cohortId, Math.max(0, num(body.capacity, 0)), user.id, now());
+  if (isNew && body.notify !== false) {
+    const targets = await all<{ id: string }>(cohortId ? `SELECT users.id FROM users JOIN memberships ON memberships.user_id=users.id WHERE users.status='active' AND users.role='student' AND memberships.cohort_id=?` : `SELECT id FROM users WHERE status='active' AND role='student'`, ...(cohortId ? [cohortId] : []));
+    await notify(targets.map((t) => t.id), 'system', `새 일정: ${title}`, `${starts.replace('T', ' ')} · 일정 메뉴에서 참석 신청하세요.`, '/learn/events');
+  }
+  return out({ ok: true, id });
+}
+export async function eventDelete({ body }: AuthedCtx) {
+  const id = str(body.id, 100);
+  await batch([stmt('DELETE FROM event_rsvps WHERE event_id=?', id), stmt('DELETE FROM events WHERE id=?', id)]);
+  return out({ ok: true });
+}
+/** 참석 신청자에게 리마인드 */
+export async function eventRemind({ body }: AuthedCtx) {
+  const id = str(body.id, 100);
+  const ev = await first<any>('SELECT * FROM events WHERE id=?', id);
+  if (!ev) throw new HttpError(404, '일정을 찾을 수 없습니다.');
+  const ids = (await all<{ user_id: string }>('SELECT user_id FROM event_rsvps WHERE event_id=?', id)).map((r) => r.user_id);
+  await notify(ids, 'system', `곧 시작: ${ev.title}`, `${ev.starts.replace('T', ' ')}${ev.link ? ' · 링크: ' + ev.link : ''}`, '/learn/events');
+  return out({ ok: true, count: ids.length });
+}
+
+// ───────── FAQ ─────────
+export async function faq({ body }: AuthedCtx) {
+  const q = str(body.question, 300), a = str(body.answer, 3000);
+  if (!q || !a) throw new HttpError(400, '질문과 답변을 입력해 주세요.');
+  await run('INSERT INTO faqs (id,question,answer,position,published) VALUES (?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET question=excluded.question,answer=excluded.answer,position=excluded.position,published=excluded.published', body.id || uid(), q, a, num(body.position, 1) || 1, body.published === undefined ? 1 : bool(body.published));
+  return out({ ok: true });
+}
+export async function faqDelete({ body }: AuthedCtx) {
+  await run('DELETE FROM faqs WHERE id=?', str(body.id, 100));
+  return out({ ok: true });
+}
+
+// ───────── 교육생 CSV 일괄 등록 ─────────
+export async function inviteBulk({ body }: AuthedCtx) {
+  const lines = String(body.csv || '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean).slice(0, 300);
+  const cohorts = await all<{ id: string; name: string }>('SELECT id,name FROM cohorts');
+  const defaultCohort = body.cohortId ? str(body.cohortId, 100) : '';
+  const results: { email: string; ok: boolean; reason?: string }[] = [];
+  const statements: D1PreparedStatement[] = [];
+  const seen = new Set<string>();
+  for (const line of lines) {
+    const [rawName, rawEmail, rawCohort] = line.split(/[,\t;]/).map((x) => (x || '').trim().replace(/^"|"$/g, ''));
+    const email = (rawEmail || rawName || '').toLowerCase();
+    const name = rawEmail ? rawName : email.split('@')[0];
+    if (!/^\S+@\S+\.\S+$/.test(email)) { results.push({ email: line, ok: false, reason: '이메일 형식' }); continue; }
+    if (seen.has(email)) { results.push({ email, ok: false, reason: '중복' }); continue; }
+    seen.add(email);
+    if (await first('SELECT id FROM users WHERE email=?', email)) { results.push({ email, ok: false, reason: '이미 등록됨' }); continue; }
+    const cohortId = cohorts.find((c) => c.name === rawCohort || c.id === rawCohort)?.id || defaultCohort;
+    const id = uid();
+    statements.push(stmt('INSERT INTO users (id,email,name,role,password,status,created) VALUES (?,?,?,?,?,?,?)', id, email, (name || '새 교육생').slice(0, 30), 'student', await encodePassword(uid()), 'active', now()));
+    statements.push(stmt('INSERT INTO user_profiles (user_id,avatar) VALUES (?,?)', id, crypto.getRandomValues(new Uint32Array(1))[0] % 30));
+    if (cohortId) statements.push(stmt('INSERT INTO memberships (user_id,cohort_id) VALUES (?,?)', id, cohortId));
+    results.push({ email, ok: true });
+  }
+  for (let i = 0; i < statements.length; i += 60) await batch(statements.slice(i, i + 60));
+  return out({ ok: true, created: results.filter((r) => r.ok).length, results });
+}
+
+// ───────── 강의 자료 파일 ─────────
+export async function lessonFileDelete({ body }: AuthedCtx) {
+  const id = str(body.id, 100);
+  const f = await first<any>('SELECT key FROM lesson_files WHERE id=?', id);
+  if (!f) throw new HttpError(404, '파일을 찾을 수 없습니다.');
+  await run('DELETE FROM lesson_files WHERE id=?', id);
+  try { await (await import('../db')).bucket()?.delete(f.key); } catch {}
+  return out({ ok: true });
+}
+
+// ───────── 콘텐츠 내보내기/가져오기 (최고 관리자) ─────────
+export async function exportContent() {
+  const [courses, lessons, assignments, faqs, paths] = await Promise.all([all('SELECT * FROM courses ORDER BY position'), all('SELECT * FROM lessons ORDER BY course_id, position'), all('SELECT * FROM assignments ORDER BY position'), all('SELECT * FROM faqs ORDER BY position'), all('SELECT * FROM paths ORDER BY position')]);
+  return { version: 1, exported: now(), courses, lessons, assignments, faqs, paths };
+}
+export async function importContent({ body, user }: AuthedCtx) {
+  let data: any;
+  try { data = typeof body.data === 'string' ? JSON.parse(body.data) : body.data; if (!data || !Array.isArray(data.courses)) throw 0; } catch { throw new HttpError(400, '내보내기 JSON 형식을 확인해 주세요.'); }
+  const sts: D1PreparedStatement[] = [];
+  for (const c of data.courses.slice(0, 200)) sts.push(stmt('INSERT INTO courses (id,title,description,category,image,position,published,level,objectives,instructor) VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET title=excluded.title,description=excluded.description,category=excluded.category,image=excluded.image,position=excluded.position,published=excluded.published,level=excluded.level,objectives=excluded.objectives,instructor=excluded.instructor', String(c.id || uid()), str(c.title, 120), str(c.description, 2000), str(c.category, 30) || '입문', num(c.image, 1) || 1, num(c.position, 1) || 1, bool(c.published ?? 1), str(c.level, 10) || '입문', str(c.objectives, 2000), str(c.instructor, 60)));
+  for (const l of (data.lessons || []).slice(0, 1000)) sts.push(stmt('INSERT INTO lessons (id,course_id,title,summary,duration,position,video,questions,resource,section,chapters,objectives,transcript,preview) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET course_id=excluded.course_id,title=excluded.title,summary=excluded.summary,duration=excluded.duration,position=excluded.position,video=excluded.video,questions=excluded.questions,resource=excluded.resource,section=excluded.section,chapters=excluded.chapters,objectives=excluded.objectives,transcript=excluded.transcript,preview=excluded.preview', String(l.id || uid()), String(l.course_id), str(l.title, 120), str(l.summary, 2000), Math.max(1, num(l.duration, 600)), num(l.position, 1) || 1, str(l.video, 1000), typeof l.questions === 'string' ? l.questions : JSON.stringify(l.questions || []), str(l.resource, 20000), str(l.section, 60), typeof l.chapters === 'string' ? l.chapters : JSON.stringify(l.chapters || []), str(l.objectives, 2000), str(l.transcript, 50000), bool(l.preview)));
+  for (const a of (data.assignments || []).slice(0, 300)) sts.push(stmt('INSERT INTO assignments (id,course_id,lesson_id,title,description,due,position,published,created) VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET course_id=excluded.course_id,lesson_id=excluded.lesson_id,title=excluded.title,description=excluded.description,due=excluded.due,position=excluded.position,published=excluded.published', String(a.id || uid()), String(a.course_id), a.lesson_id || null, str(a.title, 120), str(a.description, 10000), str(a.due, 10), num(a.position, 1) || 1, bool(a.published ?? 1), a.created || now()));
+  for (const f of (data.faqs || []).slice(0, 200)) sts.push(stmt('INSERT INTO faqs (id,question,answer,position,published) VALUES (?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET question=excluded.question,answer=excluded.answer,position=excluded.position,published=excluded.published', String(f.id || uid()), str(f.question, 300), str(f.answer, 3000), num(f.position, 1) || 1, bool(f.published ?? 1)));
+  for (const p of (data.paths || []).slice(0, 100)) sts.push(stmt('INSERT INTO paths (id,title,description,courses,position,published,created) VALUES (?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET title=excluded.title,description=excluded.description,courses=excluded.courses,position=excluded.position,published=excluded.published', String(p.id || uid()), str(p.title, 120), str(p.description, 2000), typeof p.courses === 'string' ? p.courses : JSON.stringify(p.courses || []), num(p.position, 1) || 1, bool(p.published ?? 1), p.created || now()));
+  for (let i = 0; i < sts.length; i += 60) await batch(sts.slice(i, i + 60));
+  await logActivity(user.id, 'content_import', `${sts.length}건`);
+  return out({ ok: true, count: sts.length });
+}
