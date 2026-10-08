@@ -153,7 +153,9 @@ export async function POST(req: Request) {
       if (!b) return out({ error: '영상 저장소가 연결되지 않았습니다.' }, 503);
       const key = crypto.randomUUID();
       await b.put(key, file.stream(), { httpMetadata: { contentType: file.type } });
+      const prev = await first<{ video: string }>('SELECT video FROM lessons WHERE id=?', id);
       await run('UPDATE lessons SET video=? WHERE id=?', `/api/media/${key}`, id);
+      if (prev?.video?.startsWith('/api/media/')) { try { await b.delete(prev.video.slice('/api/media/'.length)); } catch {} }
       return out({ ok: true, video: `/api/media/${key}` });
     }
 

@@ -38,15 +38,17 @@ export async function run(sql: string, ...params: unknown[]) {
 export function stmt(sql: string, ...params: unknown[]) {
   return database().prepare(sql).bind(...params);
 }
+/** D1 는 batch 당 100문, 문장당 바인딩 100개 제한 — 안전하게 나눠 실행 */
 export async function batch(statements: D1PreparedStatement[]) {
-  if (statements.length) await database().batch(statements);
+  for (let i = 0; i < statements.length; i += 90) await database().batch(statements.slice(i, i + 90));
 }
+export const chunks = <T,>(arr: T[], size = 90): T[][] => Array.from({ length: Math.ceil(arr.length / size) }, (_, i) => arr.slice(i * size, i * size + size));
 
 /**
  * 런타임 스키마 보정 — drizzle 마이그레이션이 적용되지 않은 환경(운영 D1 등)에서도
  * 새 기능이 동작하도록 테이블/컬럼을 멱등하게 추가한다. settings.schema_version 으로 1회만 수행.
  */
-const SCHEMA_VERSION = '5';
+const SCHEMA_VERSION = '6';
 const CREATE_TABLES = [
   // 기본 테이블 (0000/0001 마이그레이션과 동일, 빈 DB에서도 동작하도록)
   `CREATE TABLE IF NOT EXISTS users (id text PRIMARY KEY NOT NULL, email text NOT NULL, name text NOT NULL, role text NOT NULL, password text, status text DEFAULT 'active' NOT NULL, created text NOT NULL)`,
@@ -109,6 +111,7 @@ const ADD_COLUMNS: [string, string, string][] = [
   ['user_profiles', 'weekly_goal', `integer DEFAULT 3 NOT NULL`],
   ['user_profiles', 'bio', `text DEFAULT '' NOT NULL`],
   ['user_profiles', 'memo', `text DEFAULT '' NOT NULL`],
+  ['certificates', 'course_title', `text DEFAULT '' NOT NULL`],
 ];
 
 let migrated = false;
@@ -142,13 +145,16 @@ export async function migrate() {
   migrated = true;
 }
 
+let seeded = false;
 export async function seed() {
   await migrate();
+  if (seeded) return;
   const db = database();
-  await run(`INSERT OR IGNORE INTO cohorts (id,name,starts,ends,description,status) VALUES ('cohort-1','1기','','','라이브 커머스를 처음 시작하는 셀러의 입문 교육','recruiting')`);
-  await seedExtras();
   const cur = await first<{ value: string }>(`SELECT value FROM settings WHERE id='curriculum_version'`);
-  if (cur?.value === CURRICULUM_VERSION) return;
+  await seedExtras();
+  if (cur?.value === CURRICULUM_VERSION) { seeded = true; return; }
+  // 최초 1회: 기본 기수
+  if (!(await first(`SELECT id FROM settings WHERE id='seed_complete'`))) await run(`INSERT OR IGNORE INTO cohorts (id,name,starts,ends,description,status) VALUES ('cohort-1','1기','','','라이브 커머스를 처음 시작하는 셀러의 입문 교육','recruiting')`);
   const { courses, lessons } = flattenCurriculum();
   // 새 항목은 추가, 기존 항목은 비어 있는 필드만 채운다(관리자 편집 보존)
   await batch(courses.map((c) => db.prepare('INSERT OR IGNORE INTO courses (id,title,description,category,image,position,published,level,objectives,instructor) VALUES (?,?,?,?,?,?,1,?,?,?)').bind(c.id, c.title, c.description, c.category, c.image, c.position, c.level, c.objectives, c.instructor)));
@@ -164,6 +170,7 @@ export async function seed() {
   }
   await run(`INSERT INTO settings (id,value) VALUES ('curriculum_version',?) ON CONFLICT(id) DO UPDATE SET value=excluded.value`, CURRICULUM_VERSION);
   await run(`INSERT OR IGNORE INTO settings (id,value) VALUES ('seed_complete','1')`);
+  seeded = true;
 }
 
 const DEFAULT_FAQS: [string, string][] = [

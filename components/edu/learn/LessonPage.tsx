@@ -2,9 +2,9 @@
 import { useMemo, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, Bookmark, Download, Lock, Trophy, PenLine, MessageCircle, CheckCircle2, GraduationCap, Target, Clock, ThumbsUp, Plus, Trash2, FileText, RefreshCw, Eye, EyeOff, Lightbulb } from 'lucide-react';
 import { useEdu } from '../../../lib/edu-store';
-import { fmt, fmtShort, relTime, downloadText } from '../../../lib/learning';
+import { fmt, relTime, downloadText } from '../../../lib/learning';
 import type { Lesson } from '../../../lib/types';
-import { Button, CharacterAvatar, Empty, Pill, ProgressBar, Tabs, CharacterAvatar as Avatar } from '../ui';
+import { Button, Empty, Pill, ProgressBar, Tabs, CharacterAvatar as Avatar } from '../ui';
 import { Player, type PlayerApi } from './Player';
 
 export function LessonPage({ lesson }: { lesson: Lesson }) {
@@ -25,7 +25,6 @@ export function LessonPage({ lesson }: { lesson: Lesson }) {
   const [qPublic, setQPublic] = useState(true);
   const [tab, setTab] = useState<'notes' | 'qa' | 'resource' | 'transcript'>('notes');
   const player = useRef<PlayerApi | null>(null);
-  const pendingWatch = useRef(0);
 
   const watched = Math.max(localWatched, lp.watched || 0);
   const reading = !lesson.video;
@@ -36,7 +35,6 @@ export function LessonPage({ lesson }: { lesson: Lesson }) {
   const objectives = lesson.objectives.split('\n').filter(Boolean);
 
   async function onWatched(delta: number, position: number) {
-    pendingWatch.current += delta;
     const j = await act('progress', { lessonId: lesson.id, position, delta }, true);
     if (j) {
       setLocalWatched(j.watched);

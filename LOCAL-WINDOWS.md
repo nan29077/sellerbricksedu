@@ -55,3 +55,11 @@ corepack pnpm start
 - `lib/server/` 서버 코드: `db.ts`(런타임 스키마 보정·시드), `auth.ts`(세션·해시·레이트리밋), `payload.ts`(GET 응답), `handlers/*`(액션별), `oauth.ts`(카카오·네이버).
 - `components/edu/` 화면: `shell/`(레이아웃), `public/`, `learn/`, `admin/`. 전역 상태는 `lib/edu-store.tsx`.
 - 새 DB 변경을 받은 뒤에는 `corepack pnpm db:local`을 실행하세요. 운영 D1은 첫 요청 때 `settings.schema_version` 기준으로 자동 보정됩니다.
+
+## 자동 점검
+```powershell
+corepack pnpm start            # 빌드된 사이트 실행 (다른 창)
+corepack pnpm test:smoke       # API 회귀 42개 케이스
+node scripts/ui-sim.mjs        # 브라우저 시나리오 (Playwright 필요: npm i -g playwright; npx playwright install chromium)
+```
+둘 다 체험 계정과 테스트 데이터를 만들므로 로컬에서만 실행하세요.

@@ -155,7 +155,7 @@ export function AdminSettings() {
   return (
     <>
       <PageHead title="서비스 연동 설정" sub="수료 기준, 가입 정책, 소셜 로그인, AI와 메일 발송을 설정하세요." />
-      <form className="settings-grid" onSubmit={(e) => { e.preventDefault(); const f = Object.fromEntries(new FormData(e.currentTarget)); for (const k of ['auto_approve', 'oauth_auto_approve']) f[k] = f[k] ? '1' : '0'; perform('settings', f, '설정을 저장했습니다.'); }}>
+      <form className="settings-grid" onSubmit={(e) => { e.preventDefault(); const f = Object.fromEntries(new FormData(e.currentTarget)); for (const k of ['auto_approve', 'oauth_auto_approve', 'demo_mode']) f[k] = f[k] ? '1' : '0'; perform('settings', f, '설정을 저장했습니다.'); }}>
         <div className="panel">
           <h3><Settings2 size={22} /> 학습·수료 기준</h3>
           <div className="form-two">
@@ -170,13 +170,17 @@ export function AdminSettings() {
           <h3><Lock size={22} /> 가입·로그인 정책</h3>
           <label className="check-label"><input type="checkbox" name="auto_approve" defaultChecked={s.auto_approve === '1'} /><span>이메일 가입 즉시 승인 (끄면 관리자 승인 후 학습 가능)</span></label>
           <label className="check-label"><input type="checkbox" name="oauth_auto_approve" defaultChecked={s.oauth_auto_approve === '1'} /><span>카카오·네이버 가입 즉시 승인</span></label>
+          <label className="check-label"><input type="checkbox" name="demo_mode" defaultChecked={s.demo_mode !== '0'} /><span>체험 계정 허용 (교육생·최고 관리자 체험 버튼)</span></label>
+          {s.demo_mode !== '0' && <div className="info-note warn">체험 계정이 켜져 있으면 <b>누구나 최고 관리자 화면에 들어올 수 있습니다.</b> 운영 사이트에서는 꺼 두세요.</div>}
           <h4>카카오 로그인 {data.oauth.kakao ? <Pill tone="good">연결됨</Pill> : <Pill>미연결</Pill>}</h4>
           <label>REST API 키<input name="kakao_client" defaultValue={s.kakao_client || ''} placeholder="카카오 개발자 콘솔 › 앱 키 › REST API 키" /></label>
-          <label>Client Secret<input name="kakao_secret" type="password" autoComplete="off" placeholder={data.oauth.kakao ? '저장됨 · 변경 시에만 입력' : '카카오 로그인 › 보안 › Client Secret'} /></label>
+          <label>Client Secret<input name="kakao_secret" type="password" autoComplete="off" placeholder={s.has_kakao_secret === '1' ? '저장됨 · 변경 시에만 입력' : '카카오 로그인 › 보안 › Client Secret'} /></label>
+          {s.has_kakao_secret === '1' && <label className="check-label"><input type="checkbox" name="clear_kakao_secret" /><span>저장된 카카오 Secret 삭제</span></label>}
           <p className="small-muted">Redirect URI: <code>{origin}/api/auth/kakao/callback</code> <button type="button" className="text-link" onClick={() => copy(`${origin}/api/auth/kakao/callback`)}><Copy size={12} /></button> · 동의 항목: 닉네임, 이메일</p>
           <h4>네이버 로그인 {data.oauth.naver ? <Pill tone="good">연결됨</Pill> : <Pill>미연결</Pill>}</h4>
           <label>Client ID<input name="naver_client" defaultValue={s.naver_client || ''} /></label>
-          <label>Client Secret<input name="naver_secret" type="password" autoComplete="off" placeholder={data.oauth.naver ? '저장됨 · 변경 시에만 입력' : '네이버 개발자센터 › 애플리케이션'} /></label>
+          <label>Client Secret<input name="naver_secret" type="password" autoComplete="off" placeholder={s.has_naver_secret === '1' ? '저장됨 · 변경 시에만 입력' : '네이버 개발자센터 › 애플리케이션'} /></label>
+          {s.has_naver_secret === '1' && <label className="check-label"><input type="checkbox" name="clear_naver_secret" /><span>저장된 네이버 Secret 삭제</span></label>}
           <p className="small-muted">Callback URL: <code>{origin}/api/auth/naver/callback</code> <button type="button" className="text-link" onClick={() => copy(`${origin}/api/auth/naver/callback`)}><Copy size={12} /></button> · 제공 정보: 이메일, 이름/별명</p>
         </div>
         <div className="panel">
@@ -190,7 +194,8 @@ export function AdminSettings() {
         <div className="panel">
           <h3><Mail size={22} /> 메일 발송 (비밀번호 재설정)</h3>
           <p className="muted">Resend API 키와 발신 주소를 등록하면 비밀번호 재설정 메일이 자동 발송됩니다. 없으면 관리자가 교육생 관리에서 링크를 전달합니다.</p>
-          <label>Resend API 키<input name="resend_key" type="password" autoComplete="off" placeholder={s.resend_key === undefined ? 're_…' : '변경 시에만 입력'} /></label>
+          <label>Resend API 키<input name="resend_key" type="password" autoComplete="off" placeholder={s.has_resend_key === '1' ? '저장됨 · 변경 시에만 입력' : 're_…'} /></label>
+          {s.has_resend_key === '1' && <label className="check-label"><input type="checkbox" name="clear_resend_key" /><span>저장된 Resend 키 삭제</span></label>}
           <label>발신 주소<input name="mail_from" defaultValue={s.mail_from || ''} placeholder="셀러브릭스 에듀 <edu@yourdomain.com>" /></label>
           <div className="info-note"><KeyRound size={15} /> 수료증 공개 확인 주소: <code>{origin}/verify</code></div>
         </div>

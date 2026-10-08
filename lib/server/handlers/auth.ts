@@ -7,12 +7,15 @@ import type { Ctx } from './types';
 
 const EMAIL = /^\S+@\S+\.\S+$/;
 
-export async function demo({ req, body }: Ctx) {
+export async function demo({ req, body, settings }: Ctx) {
+  if (settings.demo_mode !== '1') throw new HttpError(403, '체험 계정이 비활성화되어 있습니다.');
   if (!['admin', 'student'].includes(body.role)) throw new HttpError(400, '잘못된 계정입니다.');
+  await ipLimit(req, 'demo', 100);
   const id = 'demo-' + body.role;
   await run('INSERT OR IGNORE INTO users (id,email,name,role,status,created) VALUES (?,?,?,?,?,?)', id, id + '@sellerbricks.test', body.role === 'admin' ? '에듀 관리자' : '김셀러', body.role, 'active', now());
   if (body.role === 'student') await run("INSERT OR IGNORE INTO memberships (user_id,cohort_id) VALUES (?,'cohort-1')", id);
   const u = await first<any>('SELECT * FROM users WHERE id=?', id);
+  if (u.status !== 'active') throw new HttpError(403, '체험 계정이 중지되어 있습니다.');
   const s = await createSession(req, u);
   return out({ user: { id: u.id, name: u.name, email: u.email, role: u.role } }, 200, { 'Set-Cookie': s.header });
 }
@@ -63,7 +66,7 @@ export async function forgot({ req, body, settings }: Ctx) {
   await ipLimit(req, 'forgot', 5);
   const generic = { ok: true, message: '등록된 이메일이면 재설정 안내가 진행됩니다. 메일이 오지 않으면 관리자에게 문의해 주세요.' };
   const u = await first<any>('SELECT id,name,password FROM users WHERE email=? AND status!=?', email, 'suspended');
-  if (!u || !u.password) return out(generic);
+  if (!u) return out(generic);
   const token = uid() + uid();
   await batch([
     stmt('DELETE FROM password_resets WHERE user_id=? OR expires<?', u.id, Date.now()),

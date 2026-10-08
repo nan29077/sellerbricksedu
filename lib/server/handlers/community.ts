@@ -15,7 +15,10 @@ export async function question({ body, user }: AuthedCtx) {
 }
 
 export async function questionDelete({ body, user }: AuthedCtx) {
-  await run(user.role === 'admin' ? 'DELETE FROM messages WHERE id=?' : "DELETE FROM messages WHERE id=? AND user_id=? AND reply=''", ...(user.role === 'admin' ? [str(body.id, 100)] : [str(body.id, 100), user.id]));
+  const staff = user.role !== 'student';
+  const r = await run(staff ? 'DELETE FROM messages WHERE id=?' : "DELETE FROM messages WHERE id=? AND user_id=? AND reply=''", ...(staff ? [str(body.id, 100)] : [str(body.id, 100), user.id]));
+  if (!r.meta.changes) throw new HttpError(403, '삭제할 수 없는 질문입니다. 답변이 달린 질문은 삭제되지 않아요.');
+  await run('DELETE FROM question_votes WHERE message_id=?', str(body.id, 100));
   return out({ ok: true });
 }
 

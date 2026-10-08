@@ -27,7 +27,7 @@ interface Store {
   go: (p: string, opts?: { replace?: boolean }) => void;
   load: () => Promise<Payload | undefined>;
   act: (action: string, extra?: any, quiet?: boolean) => Promise<any>;
-  perform: (action: string, extra?: any, success?: string) => Promise<any>;
+  perform: (action: string, extra?: any, success?: string, opts?: { keepModal?: boolean }) => Promise<any>;
   /** 서버 응답을 기다리지 않고 로컬 데이터를 먼저 바꾼다(낙관적 업데이트). */
   patch: (fn: (d: Payload) => Payload) => void;
   setToast: (t: string | ToastState, tone?: 'success' | 'error' | 'info') => void;
@@ -60,6 +60,8 @@ export function EduProvider({ children }: { children: ReactNode }) {
   const [confirm, setConfirm] = useState<ConfirmState>(null);
   const loading = useRef<Promise<any> | null>(null);
   const etag = useRef<string>('');
+  const dataRef = useRef<Payload | null>(null);
+  useEffect(() => { dataRef.current = data; }, [data]);
   const modalInitial = useRef<string>('');
 
   const setToast = useCallback((t: string | ToastState, tone: 'success' | 'error' | 'info' = 'success') => {
@@ -73,7 +75,7 @@ export function EduProvider({ children }: { children: ReactNode }) {
       setRefreshing(true);
       try {
         const r = await fetch('/api/edu', { cache: 'no-store', credentials: 'same-origin', headers: etag.current ? { 'If-None-Match': etag.current } : {} });
-        if (r.status === 304) return data ?? undefined; // 변경 없음
+        if (r.status === 304) return dataRef.current ?? undefined; // 변경 없음
         const j: any = await r.json();
         if (!r.ok) throw Error(j.error);
         etag.current = r.headers.get('ETag') || '';
@@ -89,7 +91,6 @@ export function EduProvider({ children }: { children: ReactNode }) {
       }
     })();
     return loading.current;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -151,13 +152,12 @@ export function EduProvider({ children }: { children: ReactNode }) {
   );
 
   const perform = useCallback(
-    async (action: string, extra: any = {}, success = '저장되었습니다.') => {
+    async (action: string, extra: any = {}, success = '저장되었습니다.', opts: { keepModal?: boolean } = {}) => {
       try {
         const j = await act(action, extra);
         if (j) {
           if (success) setToast(success, 'success');
-          setModal(null);
-          modalInitial.current = '';
+          if (!opts.keepModal) { setModal(null); modalInitial.current = ''; }
         }
         return j;
       } catch (e: any) {

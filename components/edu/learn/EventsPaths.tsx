@@ -4,14 +4,14 @@ import { CalendarDays, MapPin, Video, Users, CheckCircle2, ExternalLink, Route, 
 import { useEdu } from '../../../lib/edu-store';
 import { fmtLong } from '../../../lib/learning';
 import type { EduEvent } from '../../../lib/types';
-import { Button, Empty, PageHead, Pill, ProgressBar, Ring, Tabs } from '../ui';
+import { Button, Empty, PageHead, Pill, Ring, Tabs } from '../ui';
 
 export const fmtDT = (s: string) => (s ? new Date(s).toLocaleString('ko-KR', { month: 'long', day: 'numeric', weekday: 'short', hour: '2-digit', minute: '2-digit' }) : '');
 const isPast = (e: EduEvent) => new Date(e.ends || e.starts).getTime() < Date.now() - 3600000;
 const isSoon = (e: EduEvent) => { const d = new Date(e.starts).getTime() - Date.now(); return d > 0 && d < 86400000; };
 
 export function EventCard({ e, adminView = false }: { e: EduEvent; adminView?: boolean }) {
-  const { perform, busy, openModal, ask, data, superAdmin, act, setToast } = useEdu();
+  const { perform, busy, openModal, ask, data, act, setToast } = useEdu();
   const past = isPast(e);
   const attendees = (data?.rsvps ?? []).filter((r) => r.event_id === e.id);
   return (
@@ -30,7 +30,7 @@ export function EventCard({ e, adminView = false }: { e: EduEvent; adminView?: b
             <Button small secondary onClick={() => openModal('event', { ...e, cohortId: e.cohort_id || '' })}><PenLine size={14} /> 편집</Button>
             <Button small secondary onClick={async () => { try { const r = await act('event_remind', { id: e.id }); setToast(`${r.count}명에게 리마인드를 보냈습니다.`); } catch (err: any) { setToast(err.message, 'error'); } }} disabled={!e.going}><BellRing size={14} /> 리마인드 ({e.going})</Button>
             {attendees.length > 0 && <details className="attendees"><summary>참석자 {attendees.length}명</summary><ul>{attendees.map((a) => <li key={a.user_id}>{a.name} <small>{a.email}</small></li>)}</ul></details>}
-            {(superAdmin || true) && <Button small secondary danger onClick={async () => { if (await ask('일정을 삭제할까요?', '참석 신청도 함께 삭제됩니다.', { danger: true, confirmLabel: '삭제' })) perform('event_delete', { id: e.id }, '일정을 삭제했습니다.'); }}><Trash2 size={14} /></Button>}
+            <Button small secondary danger onClick={async () => { if (await ask('일정을 삭제할까요?', '참석 신청도 함께 삭제됩니다.', { danger: true, confirmLabel: '삭제' })) perform('event_delete', { id: e.id }, '일정을 삭제했습니다.'); }}><Trash2 size={14} /></Button>
           </>}
         </div>
       </div>

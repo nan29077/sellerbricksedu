@@ -5,19 +5,17 @@ import { useEdu } from '../../../lib/edu-store';
 import { CATEGORIES, LEVELS, PLATFORMS, platformName, fmt } from '../../../lib/learning';
 import { Button, Modal, Pill } from '../ui';
 
-const TITLES: Record<string, string> = { post: '라운지 글쓰기', event: '라이브 세션·일정', path: '학습 경로', faq: 'FAQ', invite_bulk: '교육생 CSV 일괄 등록', content_import: '콘텐츠 JSON 가져오기', nudge: '교육생에게 알림 보내기', course: '교육 과정 편집', lesson: '영상 강의와 확인 문제', reply: '질문 답변', cohort: '교육 기수 편집', channel: '나의 SNS 채널', progress: '학습 현황', announcement: '공지 작성', assignment: '과제 편집', review_submission: '과제 검토', import: '강의 일괄 등록', invite: '교육생 직접 등록', ai: 'AI로 확인 문제 생성' };
+const TITLES: Record<string, string> = { ai_chapters: 'AI로 챕터 나누기', post: '라운지 글쓰기', event: '라이브 세션·일정', path: '학습 경로', faq: 'FAQ', invite_bulk: '교육생 CSV 일괄 등록', content_import: '콘텐츠 JSON 가져오기', nudge: '교육생에게 알림 보내기', course: '교육 과정 편집', lesson: '영상 강의와 확인 문제', reply: '질문 답변', cohort: '교육 기수 편집', channel: '나의 SNS 채널', progress: '학습 현황', announcement: '공지 작성', assignment: '과제 편집', review_submission: '과제 검토', import: '강의 일괄 등록', invite: '교육생 직접 등록', ai: 'AI로 확인 문제 생성' };
 
 export function EduModals() {
   const store = useEdu();
-  const storeRef = store;
-  const { modal, setModal, closeModal, editor, setEditor, perform, busy, courses, lessons, data, ls, pct, setBusy, load, setToast, act, openModal } = store;
+  const { modal, closeModal, editor, setEditor, perform, busy, courses, lessons, data, ls, pct, setBusy, load, setToast, act, openModal } = store;
   const [aiText, setAiText] = useState('');
   if (!modal) return null;
-  void setModal;
   const close = () => { void closeModal(); };
   const set = (k: string, v: any) => setEditor({ ...editor, [k]: v });
   const wide = ['lesson', 'progress', 'import', 'announcement', 'assignment', 'post', 'event', 'path', 'invite_bulk', 'content_import'].includes(modal.type);
-  const title = modal.type === 'progress' ? `${modal.user?.name}님의 학습 현황` : TITLES[modal.type] || '설정';
+  const title = modal.type === 'progress' ? `${modal.user?.name}님의 학습 현황` : modal.type === 'ai' && editor.mode === 'chapters' ? TITLES.ai_chapters : TITLES[modal.type] || '설정';
 
   const actionOf: Record<string, string> = { post: 'post', event: 'event', path: 'path', faq: 'faq', invite_bulk: 'invite_bulk', content_import: 'content_import', nudge: 'nudge', channel: 'channel', course: 'course', lesson: 'lesson', cohort: 'cohort', reply: 'reply', announcement: 'announcement', assignment: 'assignment', review_submission: 'review_submission', import: 'lessons_import', invite: 'invite' };
   const successOf: Record<string, string> = { post: '게시글을 저장했습니다.', event: '일정을 저장했습니다.', path: '학습 경로를 저장했습니다.', faq: 'FAQ를 저장했습니다.', invite_bulk: '일괄 등록을 완료했습니다.', content_import: '콘텐츠를 가져왔습니다.', nudge: '알림을 보냈습니다.', reply: '답변을 등록했습니다. 교육생에게 알림이 전달됩니다.', announcement: '공지를 저장했습니다.', review_submission: '검토 결과를 저장했습니다. 교육생에게 알림이 전달됩니다.', import: '강의를 일괄 등록했습니다.', invite: '교육생을 등록했습니다. 비밀번호 재설정 링크를 전달해 주세요.' };
@@ -27,11 +25,12 @@ export function EduModals() {
     const a = actionOf[modal!.type];
     if (!a) return;
     const r = await perform(a, { ...editor }, successOf[a] || '저장되었습니다.');
-    if (r && a === 'post' && r.id && !editor.id) { const { go } = storeRef; go('/learn/lounge/' + r.id); }
+    if (r && a === 'post' && r.id && !editor.id) store.go('/learn/lounge/' + r.id);
     if (r && a === 'invite_bulk') setToast(`${r.created}명 등록 완료${r.results.filter((x: any) => !x.ok).length ? ` · 실패 ${r.results.filter((x: any) => !x.ok).length}건 (${r.results.filter((x: any) => !x.ok).slice(0, 3).map((x: any) => x.email + ':' + x.reason).join(', ')})` : ''}`);
     if (r && a === 'content_import') setToast(`${r.count}건을 가져왔습니다.`);
     if (r && a === 'invite' && r.userId) {
-      try { const l = await act('reset_link', { userId: r.userId }); await navigator.clipboard?.writeText(l.link); setToast('교육생을 등록하고 비밀번호 설정 링크를 복사했습니다. 교육생에게 전달해 주세요.'); } catch {}
+      if (store.superAdmin) { try { const l = await act('reset_link', { userId: r.userId }); await navigator.clipboard?.writeText(l.link); setToast('교육생을 등록하고 비밀번호 설정 링크를 복사했습니다. 교육생에게 전달해 주세요.'); } catch {} }
+      else setToast('교육생을 등록했습니다. 교육생은 로그인 화면의 \'비밀번호를 잊으셨나요?\'로 비밀번호를 설정할 수 있어요.', 'info');
     }
   }
 
@@ -54,7 +53,7 @@ export function EduModals() {
           <label>관리자 메모 <small className="muted">(교육생에게 보이지 않음)</small>
             <textarea rows={2} value={editor.memo ?? ''} onChange={(e) => set('memo', e.target.value)} placeholder="상담 내용, 특이사항, 후속 조치 등" maxLength={2000} />
           </label>
-          <div className="admin-actions"><Button small onClick={() => perform('memo', { userId: u.id, memo: editor.memo ?? '' }, '메모를 저장했습니다.')} disabled={busy}>메모 저장</Button><Button small secondary onClick={() => openModal('nudge', { ids: [u.id], title: '', body: '', link: '/learn', name: u.name })}>알림 보내기</Button></div>
+          <div className="admin-actions"><Button small onClick={() => perform('memo', { userId: u.id, memo: editor.memo ?? '' }, '메모를 저장했습니다.', { keepModal: true })} disabled={busy}>메모 저장</Button><Button small secondary onClick={() => openModal('nudge', { ids: [u.id], title: '', body: '', link: '/learn', name: u.name })}>알림 보내기</Button></div>
           {myCerts.length > 0 && <p className="small-muted">수료: {myCerts.map((c) => `${c.course_title} (${c.id})`).join(', ')}</p>}
           {mySub.length > 0 && <p className="small-muted">과제: {mySub.map((s) => `${data?.assignments.find((a) => a.id === s.assignment_id)?.title || ''} · ${s.status === 'passed' ? '통과' : s.status === 'revise' ? '보완' : '검토 대기'}`).join(', ')}</p>}
         </div>
@@ -77,13 +76,13 @@ export function EduModals() {
   if (modal.type === 'ai') {
     return (
       <Modal title={title} onClose={close}>
-        <p className="muted">강의 내용을 바탕으로 객관식 확인 문제 3개를 생성합니다. 생성 후 강의 편집 화면에서 검토·수정하세요.</p>
+        <p className="muted">{editor.mode === 'chapters' ? '강의 내용을 바탕으로 챕터(시작 시각·제목)를 나눕니다.' : '강의 내용을 바탕으로 객관식 확인 문제 3개를 생성합니다.'} 생성 후 강의 편집 화면에서 검토·수정하세요.</p>
         <label>강의 내용<textarea rows={6} value={editor.topic} onChange={(e) => set('topic', e.target.value)} /></label>
         {!data?.hasAiKey && <div className="info-note">AI 키가 연결되지 않았습니다. 연동 설정에서 등록해 주세요.</div>}
         {aiText && <pre className="resource-text">{aiText}</pre>}
         <div className="modal-actions">
           <Button secondary onClick={close}>닫기</Button>
-          <Button disabled={busy || !data?.hasAiKey} onClick={async () => { try { const r = await act('ai', { topic: editor.topic, mode: 'quiz' }); if (r.json) { openModal('lesson', { ...editor.lesson, questions: JSON.stringify(r.json, null, 2) }); setToast('확인 문제 초안을 적용했습니다. 검토 후 저장하세요.'); } else setAiText(r.text); } catch (e: any) { setToast(e.message, 'error'); } }}><Sparkles size={16} /> {busy ? '생성 중…' : '문제 생성'}</Button>
+          <Button disabled={busy || !data?.hasAiKey} onClick={async () => { const mode = editor.mode === 'chapters' ? 'chapters' : 'quiz'; try { const r = await act('ai', { topic: editor.topic, mode }); if (r.json) { openModal('lesson', { ...editor.lesson, [mode === 'chapters' ? 'chapters' : 'questions']: JSON.stringify(r.json, null, 2) }); setToast(mode === 'chapters' ? '챕터 초안을 적용했습니다. 검토 후 저장하세요.' : '확인 문제 초안을 적용했습니다. 검토 후 저장하세요.'); } else setAiText(r.text); } catch (e: any) { setToast(e.message, 'error'); } }}><Sparkles size={16} /> {busy ? '생성 중…' : editor.mode === 'chapters' ? '챕터 생성' : '문제 생성'}</Button>
         </div>
       </Modal>
     );
@@ -341,11 +340,11 @@ function LessonForm({ editor, set }: { editor: any; set: (k: string, v: any) => 
         <p className="muted">문제·보기·정답과 해설을 작성하세요. 정답은 라디오 버튼으로 선택합니다.</p>
         {qsError ? <p className="warn-text">문제 형식을 확인해 주세요.</p> : qs.map((q, i) => (
           <div className="question-editor" key={i}>
-            <label>문제 {i + 1}<input required value={q.question} onChange={(e) => updateQ(i, 'question', e.target.value)} /></label>
+            <label>문제 {i + 1}<input value={q.question} onChange={(e) => updateQ(i, 'question', e.target.value)} /></label>
             {q.options.map((o: string, j: number) => (
               <label key={j} className="quiz-edit-option">
                 <input type="radio" name={'answer-' + i} checked={q.answer === j} onChange={() => updateQ(i, 'answer', j)} aria-label={`보기 ${j + 1} 정답`} />
-                <input required value={o} placeholder={'보기 ' + (j + 1)} onChange={(e) => updateQ(i, 'options', q.options.map((x: string, k: number) => (k === j ? e.target.value : x)))} />
+                <input value={o} placeholder={'보기 ' + (j + 1)} onChange={(e) => updateQ(i, 'options', q.options.map((x: string, k: number) => (k === j ? e.target.value : x)))} />
                 {q.options.length > 2 && <button type="button" className="icon-button" onClick={() => updateQ(i, 'options', q.options.filter((_: any, k: number) => k !== j))} aria-label="보기 삭제"><Trash2 size={13} /></button>}
               </label>
             ))}
@@ -368,7 +367,7 @@ function LessonForm({ editor, set }: { editor: any; set: (k: string, v: any) => 
           <b>첨부 파일 (PDF·이미지·문서, 20MB)</b>
           {editor.id ? (
             <>
-              <ul className="file-list">{(data?.lessonFiles ?? []).filter((f) => f.lesson_id === editor.id).map((f) => <li key={f.id}><a href={'/api/media/' + f.id} target="_blank" rel="noopener noreferrer">{f.name}</a><small>{Math.round(f.size / 1024)}KB</small><button type="button" className="icon-button" aria-label="삭제" onClick={() => perform('lesson_file_delete', { id: f.id }, '파일을 삭제했습니다.')}><Trash2 size={14} /></button></li>)}</ul>
+              <ul className="file-list">{(data?.lessonFiles ?? []).filter((f) => f.lesson_id === editor.id).map((f) => <li key={f.id}><a href={'/api/media/' + f.id} target="_blank" rel="noopener noreferrer">{f.name}</a><small>{Math.round(f.size / 1024)}KB</small><button type="button" className="icon-button" aria-label="삭제" onClick={() => perform('lesson_file_delete', { id: f.id }, '파일을 삭제했습니다.', { keepModal: true })}><Trash2 size={14} /></button></li>)}</ul>
               <input type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.txt,.docx,.xlsx,.pptx,.zip" onChange={async (e) => { const file = e.target.files?.[0]; if (!file) return; setBusy(true); try { const fd = new FormData(); fd.set('file', file); fd.set('lessonId', editor.id); fd.set('kind', 'file'); const r = await fetch('/api/edu', { method: 'POST', body: fd }); const j: any = await r.json(); if (!r.ok) throw Error(j.error); await load(); setToast('파일을 첨부했습니다.'); } catch (err: any) { setToast(err.message, 'error'); } finally { setBusy(false); e.target.value = ''; } }} />
             </>
           ) : <small>강의를 먼저 저장하면 파일을 첨부할 수 있어요.</small>}

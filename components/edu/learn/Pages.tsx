@@ -2,7 +2,7 @@
 import { useMemo, useState } from 'react';
 import { Play, Download, Trophy, Award, Flame, Clock, CheckCircle2, ThumbsUp, Trash2, Pin, Search, ClipboardList, Link2, Send, ExternalLink, Share2 } from 'lucide-react';
 import { useEdu } from '../../../lib/edu-store';
-import { fmt, fmtDate, fmtLong, fmtShort, relTime, streak, thisWeek, badges, downloadText } from '../../../lib/learning';
+import { fmt, fmtDate, fmtLong, fmtShort, relTime, streak, thisWeek, badges, downloadText, kstDay } from '../../../lib/learning';
 import { Button, CharacterAvatar, Empty, Logo, PageHead, Pill, Tabs } from '../ui';
 import { Heatmap } from './Dashboard';
 
@@ -174,7 +174,7 @@ export function AssignmentsPage() {
       <PageHead title="실습 과제" sub="배운 내용을 과제로 정리해 제출하면 관리자가 피드백을 드려요." />
       {list.length ? list.map((a) => {
         const s = sub(a.id);
-        const overdue = a.due && !s && a.due < new Date().toISOString().slice(0, 10);
+        const overdue = a.due && !s && a.due < kstDay();
         return (
           <div className="panel assignment-card" key={a.id}>
             <div className="between">

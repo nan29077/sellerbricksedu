@@ -1,4 +1,4 @@
-import { first, all, run, batch, stmt, now, uid, HttpError } from '../db';
+import { first, all, run, batch, stmt, now, uid, chunks, bucket, HttpError } from '../db';
 import { out, str, num, bool, siteUrl } from '../http';
 import { SETTING_DEFAULTS, setSetting } from '../settings';
 import { notify, logActivity } from '../notify';
@@ -44,7 +44,7 @@ export async function member({ body, user }: AuthedCtx) {
   if (ids.includes(user.id)) throw new HttpError(400, '현재 관리자 계정은 변경할 수 없습니다.');
   if (body.status) {
     if (!['active', 'pending', 'suspended'].includes(body.status)) throw new HttpError(400, '잘못된 상태입니다.');
-    const before = await all<any>(`SELECT id,status,name FROM users WHERE id IN (${ids.map(() => '?').join(',')})`, ...ids);
+    const before = (await Promise.all(chunks(ids).map((part) => all<any>(`SELECT id,status,name FROM users WHERE id IN (${part.map(() => '?').join(',')})`, ...part)))).flat();
     await batch(ids.map((id) => stmt("UPDATE users SET status=? WHERE id=? AND role='student'", body.status, id)));
     const approved = before.filter((u) => u.status === 'pending' && body.status === 'active').map((u) => u.id);
     if (approved.length) await notify(approved, 'approval', '교육 계정이 승인되었습니다', '지금 바로 나의 강의실에서 학습을 시작하세요.', '/learn');
@@ -62,7 +62,9 @@ export async function memberDelete({ body, user }: AuthedCtx) {
   if (id === user.id) throw new HttpError(400, '현재 계정은 삭제할 수 없습니다.');
   const target = await first<any>('SELECT role FROM users WHERE id=?', id);
   if (!target) throw new HttpError(404, '교육생을 찾을 수 없습니다.');
-  await batch(['sessions:user_id', 'user_profiles:user_id', 'progress:user_id', 'lesson_notes:user_id', 'learning_days:user_id', 'memberships:user_id', 'channels:user_id', 'channel_visits:user_id', 'channel_visits:target_id', 'notifications:user_id', 'submissions:user_id', 'reviews:user_id', 'question_votes:user_id', 'oauth_accounts:user_id', 'password_resets:user_id', 'certificates:user_id', 'messages:user_id', 'activity_log:user_id', 'users:id'].map((t) => {
+  await run('DELETE FROM comments WHERE post_id IN (SELECT id FROM posts WHERE user_id=?)', id);
+  await run('DELETE FROM post_likes WHERE post_id IN (SELECT id FROM posts WHERE user_id=?)', id);
+  await batch(['sessions:user_id', 'user_profiles:user_id', 'progress:user_id', 'lesson_notes:user_id', 'learning_days:user_id', 'memberships:user_id', 'channels:user_id', 'channel_visits:user_id', 'channel_visits:target_id', 'notifications:user_id', 'submissions:user_id', 'reviews:user_id', 'question_votes:user_id', 'oauth_accounts:user_id', 'password_resets:user_id', 'certificates:user_id', 'messages:user_id', 'activity_log:user_id', 'quiz_attempts:user_id', 'event_rsvps:user_id', 'comments:user_id', 'post_likes:user_id', 'posts:user_id', 'users:id'].map((t) => {
     const [table, col] = t.split(':');
     return stmt(`DELETE FROM ${table} WHERE ${col}=?`, id);
   }));
@@ -82,9 +84,9 @@ export async function invite({ body, settings }: AuthedCtx) {
   const email = str(body.email, 200).toLowerCase(), name = str(body.name, 30) || '새 교육생';
   if (!/^\S+@\S+\.\S+$/.test(email)) throw new HttpError(400, '이메일을 확인해 주세요.');
   if (await first('SELECT id FROM users WHERE email=?', email)) throw new HttpError(400, '이미 등록된 이메일입니다.');
-  const id = uid(), temp = uid();
+  const id = uid();
   await batch([
-    stmt('INSERT INTO users (id,email,name,role,password,status,created) VALUES (?,?,?,?,?,?,?)', id, email, name, 'student', await encodePassword(temp), 'active', now()),
+    stmt('INSERT INTO users (id,email,name,role,password,status,created) VALUES (?,?,?,?,NULL,?,?)', id, email, name, 'student', 'active', now()),
     stmt('INSERT INTO user_profiles (user_id,avatar) VALUES (?,?)', id, crypto.getRandomValues(new Uint32Array(1))[0] % 30),
     ...(body.cohortId ? [stmt('INSERT INTO memberships (user_id,cohort_id) VALUES (?,?)', id, body.cohortId)] : []),
   ]);
@@ -125,17 +127,24 @@ export async function courseDelete({ body, user }: AuthedCtx) {
   const id = str(body.id, 100);
   const lessons = await all<{ id: string }>('SELECT id FROM lessons WHERE course_id=?', id);
   const lids = lessons.map((l) => l.id);
-  const inList = lids.length ? `(${lids.map(() => '?').join(',')})` : '(NULL)';
+  await purgeLessonFiles(lids);
+  const perLesson = (table: string) => chunks(lids).map((part) => stmt(`DELETE FROM ${table} WHERE lesson_id IN (${part.map(() => '?').join(',')})`, ...part));
   await batch([
-    stmt(`DELETE FROM progress WHERE lesson_id IN ${inList}`, ...lids),
-    stmt(`DELETE FROM lesson_notes WHERE lesson_id IN ${inList}`, ...lids),
-    stmt(`DELETE FROM messages WHERE lesson_id IN ${inList}`, ...lids),
+    ...perLesson('progress'), ...perLesson('lesson_notes'), ...perLesson('quiz_attempts'),
+    ...chunks(lids).map((part) => stmt(`UPDATE messages SET lesson_id=NULL WHERE lesson_id IN (${part.map(() => '?').join(',')})`, ...part)),
     stmt('DELETE FROM submissions WHERE assignment_id IN (SELECT id FROM assignments WHERE course_id=?)', id),
     stmt('DELETE FROM assignments WHERE course_id=?', id),
     stmt('DELETE FROM reviews WHERE course_id=?', id),
     stmt('DELETE FROM lessons WHERE course_id=?', id),
     stmt('DELETE FROM courses WHERE id=?', id),
   ]);
+  // 학습 경로에서 삭제된 과정 제거
+  const paths = await all<{ id: string; courses: string }>('SELECT id, courses FROM paths WHERE courses LIKE ?', '%' + id + '%');
+  for (const p of paths) {
+    let list: string[] = [];
+    try { list = JSON.parse(p.courses); } catch {}
+    await run('UPDATE paths SET courses=? WHERE id=?', JSON.stringify(list.filter((c) => c !== id)), p.id);
+  }
   await logActivity(user.id, 'course_delete', id);
   return out({ ok: true });
 }
@@ -200,7 +209,8 @@ export async function lesson({ body }: AuthedCtx) {
 }
 export async function lessonDelete({ body, user }: AuthedCtx) {
   const id = str(body.id, 100);
-  await batch([stmt('DELETE FROM progress WHERE lesson_id=?', id), stmt('DELETE FROM lesson_notes WHERE lesson_id=?', id), stmt('UPDATE messages SET lesson_id=NULL WHERE lesson_id=?', id), stmt('DELETE FROM lessons WHERE id=?', id)]);
+  await purgeLessonFiles([id]);
+  await batch([stmt('DELETE FROM progress WHERE lesson_id=?', id), stmt('DELETE FROM lesson_notes WHERE lesson_id=?', id), stmt('DELETE FROM quiz_attempts WHERE lesson_id=?', id), stmt('UPDATE messages SET lesson_id=NULL WHERE lesson_id=?', id), stmt('UPDATE assignments SET lesson_id=NULL WHERE lesson_id=?', id), stmt('DELETE FROM lessons WHERE id=?', id)]);
   await logActivity(user.id, 'lesson_delete', id);
   return out({ ok: true });
 }
@@ -308,12 +318,13 @@ export async function settings({ body }: AuthedCtx) {
     if (id === 'pass_score') v = String(Math.min(100, Math.max(1, num(v, 80) || 80)));
     if (id === 'watch_ratio') v = String(Math.min(100, Math.max(10, num(v, 90) || 90)));
     if (id === 'max_video_mb') v = String(Math.min(200, Math.max(5, num(v, 50) || 50)));
+    if (['auto_approve', 'oauth_auto_approve', 'demo_mode'].includes(id)) v = v === '1' ? '1' : '0';
     // 비밀 값은 빈 문자열이면 유지
     if (['kakao_secret', 'naver_secret', 'resend_key'].includes(id) && !v) continue;
     await setSetting(id, v);
   }
   if (body.ai_key) await setSetting('ai_key', str(body.ai_key, 500));
-  if (body.clear_ai_key) await run(`DELETE FROM settings WHERE id='ai_key'`);
+  for (const k of ['ai_key', 'kakao_secret', 'naver_secret', 'resend_key']) if (body['clear_' + k]) await run('DELETE FROM settings WHERE id=?', k);
   return out({ ok: true });
 }
 
@@ -387,6 +398,8 @@ export async function inviteBulk({ body }: AuthedCtx) {
   const results: { email: string; ok: boolean; reason?: string }[] = [];
   const statements: D1PreparedStatement[] = [];
   const seen = new Set<string>();
+  const candidates = lines.map((l) => (l.split(/[,\t;]/)[1] || l.split(/[,\t;]/)[0] || '').trim().replace(/^"|"$/g, '').toLowerCase()).filter((e) => e.includes('@'));
+  const existingEmails = new Set((await Promise.all(chunks(candidates).map((part) => all<{ email: string }>(`SELECT email FROM users WHERE email IN (${part.map(() => '?').join(',')})`, ...part)))).flat().map((r) => r.email));
   for (const line of lines) {
     const [rawName, rawEmail, rawCohort] = line.split(/[,\t;]/).map((x) => (x || '').trim().replace(/^"|"$/g, ''));
     const email = (rawEmail || rawName || '').toLowerCase();
@@ -394,25 +407,33 @@ export async function inviteBulk({ body }: AuthedCtx) {
     if (!/^\S+@\S+\.\S+$/.test(email)) { results.push({ email: line, ok: false, reason: '이메일 형식' }); continue; }
     if (seen.has(email)) { results.push({ email, ok: false, reason: '중복' }); continue; }
     seen.add(email);
-    if (await first('SELECT id FROM users WHERE email=?', email)) { results.push({ email, ok: false, reason: '이미 등록됨' }); continue; }
+    if (existingEmails.has(email)) { results.push({ email, ok: false, reason: '이미 등록됨' }); continue; }
     const cohortId = cohorts.find((c) => c.name === rawCohort || c.id === rawCohort)?.id || defaultCohort;
     const id = uid();
-    statements.push(stmt('INSERT INTO users (id,email,name,role,password,status,created) VALUES (?,?,?,?,?,?,?)', id, email, (name || '새 교육생').slice(0, 30), 'student', await encodePassword(uid()), 'active', now()));
+    statements.push(stmt('INSERT INTO users (id,email,name,role,password,status,created) VALUES (?,?,?,?,NULL,?,?)', id, email, (name || '새 교육생').slice(0, 30), 'student', 'active', now())); // 비밀번호는 재설정 링크로 설정
     statements.push(stmt('INSERT INTO user_profiles (user_id,avatar) VALUES (?,?)', id, crypto.getRandomValues(new Uint32Array(1))[0] % 30));
     if (cohortId) statements.push(stmt('INSERT INTO memberships (user_id,cohort_id) VALUES (?,?)', id, cohortId));
     results.push({ email, ok: true });
   }
-  for (let i = 0; i < statements.length; i += 60) await batch(statements.slice(i, i + 60));
+  await batch(statements);
   return out({ ok: true, created: results.filter((r) => r.ok).length, results });
 }
 
 // ───────── 강의 자료 파일 ─────────
+/** 강의 삭제 시 첨부 파일 레코드와 R2 객체 정리 */
+async function purgeLessonFiles(lessonIds: string[]) {
+  if (!lessonIds.length) return;
+  const files = (await Promise.all(chunks(lessonIds).map((part) => all<{ id: string; key: string }>(`SELECT id,key FROM lesson_files WHERE lesson_id IN (${part.map(() => '?').join(',')})`, ...part)))).flat();
+  const b = bucket();
+  for (const f of files) { try { await b?.delete(f.key); } catch {} }
+  await batch(chunks(lessonIds).map((part) => stmt(`DELETE FROM lesson_files WHERE lesson_id IN (${part.map(() => '?').join(',')})`, ...part)));
+}
 export async function lessonFileDelete({ body }: AuthedCtx) {
   const id = str(body.id, 100);
   const f = await first<any>('SELECT key FROM lesson_files WHERE id=?', id);
   if (!f) throw new HttpError(404, '파일을 찾을 수 없습니다.');
   await run('DELETE FROM lesson_files WHERE id=?', id);
-  try { await (await import('../db')).bucket()?.delete(f.key); } catch {}
+  try { await bucket()?.delete(f.key); } catch {}
   return out({ ok: true });
 }
 

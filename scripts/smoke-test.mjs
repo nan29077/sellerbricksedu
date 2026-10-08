@@ -29,6 +29,8 @@ const S = client('student'), A = client('admin'), X = client('anon');
 let r = await X.get();
 check('비로그인 GET 200', r.status === 200 && Array.isArray(r.json.courses), `courses=${r.json.courses?.length} lessons=${r.json.lessons?.length}`);
 check('비로그인 응답에 진도·메시지 없음', r.json.progress?.length === 0 && r.json.messages?.length === 0);
+check('비로그인에 비공개 강의 본문(대본·자료) 미노출', r.json.lessons.filter((l) => !l.preview).every((l) => !l.transcript && !l.resource && l.video !== '/sample-intro.mp4'));
+check('비로그인에 비밀 설정 미노출', !('kakao_client' in r.json.settings) && !('mail_from' in r.json.settings));
 const etag = r.headers.get('etag');
 check('ETag 제공', !!etag);
 r = await fetch(BASE + '/api/edu', { headers: { 'If-None-Match': etag } });
@@ -51,7 +53,11 @@ const data = (await S.get()).json;
 const videoLesson = data.lessons.find((l) => l.video);
 const readingLesson = data.lessons.find((l) => !l.video);
 if (videoLesson) {
-  for (let i = 0; i < Math.ceil((videoLesson.duration * 0.9) / 15) + 1; i++) await S.call('progress', { lessonId: videoLesson.id, position: 1, delta: 15 });
+  // 서버는 벽시계 기준으로 시청 시간을 상한(경과초×2+3)하므로 실제 플레이어처럼 작은 delta 를 여러 번 보낸다
+  await S.call('progress_reset', { courseId: videoLesson.course_id });
+  r = await S.call('progress', { lessonId: videoLesson.id, position: 1, delta: 15 });
+  check('시청 시간 상한(즉시 15초 요청 → 약 3초만 인정)', r.status === 200 && r.json.watched <= 5, `watched=${r.json.watched}`);
+  for (let i = 0; i < Math.ceil((videoLesson.duration * 0.9) / 3) + 1; i++) await S.call('progress', { lessonId: videoLesson.id, position: 1, delta: 3 });
   r = await S.call('quiz', { lessonId: videoLesson.id, answers: videoLesson.questions.map(() => 0) });
   check('영상 강의 퀴즈 응시', r.status === 200 && typeof r.json.score === 'number', `score=${r.json.score}`);
 }
@@ -109,16 +115,45 @@ check('콘텐츠 내보내기', r.status === 200 && Array.isArray(r.json.lessons
 r = await A.call('member', { id: 'demo-student', status: 'active' });
 check('교육생 상태 변경', r.status === 200);
 
+// ── 운영 관리자 경계
+r = await A.call('invite', { name: '점검매니저', email: `mgr-${Date.now()}@test.com` });
+const mgrId = r.json.userId;
+await A.call('member', { id: mgrId, role: 'manager' });
+const tok = (await A.call('reset_link', { userId: mgrId })).json.link.split('/reset/')[1];
+const M = client('manager');
+r = await M.call('reset', { token: tok, password: 'managerpass123' });
+check('운영 관리자 비밀번호 설정 로그인', r.status === 200);
+const mp = (await M.get()).json;
+check('운영 관리자 응답에 재설정 토큰·비밀 설정 없음', (mp.resets ?? []).length === 0 && mp.adminSettings === undefined && mp.superAdmin === false);
+r = await M.call('settings', { pass_score: '1' });
+check('운영 관리자 연동 설정 403', r.status === 403);
+const q2 = (await S.call('question', { body: '삭제 테스트', isPublic: true }));
+const qid = (await A.get()).json.messages.find((m) => m.body === '삭제 테스트')?.id;
+r = await M.call('question_delete', { id: qid });
+check('운영 관리자 질문 삭제 실제 반영', r.status === 200 && !(await A.get()).json.messages.some((m) => m.id === qid));
+await A.call('member_delete', { id: mgrId });
+void q2;
+
+// ── 체험 계정 토글
+await A.call('settings', { demo_mode: '0' });
+r = await client('x2').call('demo', { role: 'admin' });
+check('체험 계정 끄면 demo 403', r.status === 403);
+await A.call('settings', { demo_mode: '1' });
+
 // ── 정리
 await A.call('event_delete', { id: evId });
 await S.call('post_delete', { id: postId });
 await S.call('progress_reset', { courseId: data.lessons[0].course_id });
-check('진도 초기화', true);
+const afterReset = (await S.get()).json.progress.filter((p) => data.lessons.some((l) => l.id === p.lesson_id && l.course_id === data.lessons[0].course_id));
+check('진도 초기화(시청·점수·응시 횟수 0)', afterReset.every((p) => p.watched === 0 && p.attempts === 0 && p.best_score === null));
 
-// ── 레이트리밋
-let last = 0;
-for (let i = 0; i < 11; i++) last = (await X.call('login', { email: 'nobody@x.com', password: 'bad' })).status;
-check('로그인 11회 → 429', last === 429);
+// ── 레이트리밋 (같은 IP 의 다른 테스트에 영향을 주므로 SMOKE_RATELIMIT=1 일 때만)
+if (process.env.SMOKE_RATELIMIT === '1') {
+  let last = 0;
+  const em = `rl-${Date.now()}@x.com`;
+  for (let i = 0; i < 11; i++) last = (await X.call('login', { email: em, password: 'bad' })).status;
+  check('같은 이메일 11회 실패 → 429', last === 429);
+}
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

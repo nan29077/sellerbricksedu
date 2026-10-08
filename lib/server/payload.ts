@@ -1,6 +1,6 @@
-import { all, first } from './db';
+import { all, first, kstDay } from './db';
 import type { SessionUser } from './auth';
-import { getSettings, publicSettings } from './settings';
+import { getSettings, publicSettings, adminSettingsView } from './settings';
 
 const parseJson = (s: string, fallback: any) => {
   try {
@@ -27,11 +27,12 @@ export async function buildPayload(user: SessionUser | null) {
       ? 'SELECT * FROM lessons ORDER BY position'
       : 'SELECT lessons.* FROM lessons JOIN courses ON courses.id=lessons.course_id WHERE courses.published=1 ORDER BY lessons.position',
   );
-  const lessons = rawLessons.map((l: any) => ({
-    ...l,
-    questions: parseJson(l.questions, []).map(({ answer: _a, explanation: _e, ...q }: any) => q),
-    chapters: parseJson(l.chapters || '[]', []),
-  }));
+  const lessons = rawLessons.map((l: any) => {
+    const base = { ...l, questions: parseJson(l.questions, []).map(({ answer: _a, explanation: _e, ...q }: any) => q), chapters: parseJson(l.chapters || '[]', []) };
+    // 비로그인: 미리보기 강의가 아니면 본문(영상·대본·자료)은 내려보내지 않는다
+    if (!user && !l.preview) return { ...base, video: l.video ? 'locked' : '', transcript: '', resource: '', chapters: [] };
+    return base;
+  });
   const ratings = await all<{ course_id: string; avg: number; count: number }>('SELECT course_id, AVG(rating) AS avg, COUNT(*) AS count FROM reviews GROUP BY course_id');
   const enrolled = await all<{ course_id: string; count: number }>(
     'SELECT lessons.course_id, COUNT(DISTINCT progress.user_id) AS count FROM progress JOIN lessons ON lessons.id=progress.lesson_id GROUP BY lessons.course_id',
@@ -58,7 +59,7 @@ export async function buildPayload(user: SessionUser | null) {
 
   const faqs = await all('SELECT * FROM faqs WHERE published=1 ORDER BY position');
   const paths = (await all(admin ? 'SELECT * FROM paths ORDER BY position' : 'SELECT * FROM paths WHERE published=1 ORDER BY position')).map((p: any) => ({ ...p, courses: parseJson(p.courses, []) }));
-  const lessonFiles = await all('SELECT id,lesson_id,name,size,type,created FROM lesson_files ORDER BY created');
+  const lessonFiles = user ? await all(admin ? 'SELECT id,lesson_id,name,size,type,created FROM lesson_files ORDER BY created' : 'SELECT lesson_files.id,lesson_files.lesson_id,lesson_files.name,lesson_files.size,lesson_files.type,lesson_files.created FROM lesson_files JOIN lessons ON lessons.id=lesson_files.lesson_id JOIN courses ON courses.id=lessons.course_id WHERE courses.published=1 ORDER BY lesson_files.created') : [];
   const base: any = { user, settings, oauth, courses: coursesOut, lessons, reviews, announcements, cohorts, faqs, paths, lessonFiles };
   if (!user) return { ...base, progress: [], messages: [], memberships: [], channels: [], visits: [], notifications: [], notes: [], learningDays: [], certificates: [], assignments: [], submissions: [], events: [], posts: [] };
 
@@ -66,7 +67,7 @@ export async function buildPayload(user: SessionUser | null) {
     all('SELECT * FROM progress WHERE user_id=?', user.id),
     all('SELECT * FROM lesson_notes WHERE user_id=? ORDER BY at', user.id),
     all('SELECT day, seconds, completed FROM learning_days WHERE user_id=? ORDER BY day DESC LIMIT 400', user.id),
-    all('SELECT certificates.*, courses.title AS course_title FROM certificates JOIN courses ON courses.id=certificates.course_id WHERE user_id=? ORDER BY issued DESC', user.id),
+    all("SELECT certificates.*, COALESCE(courses.title, certificates.course_title) AS course_title FROM certificates LEFT JOIN courses ON courses.id=certificates.course_id WHERE user_id=? ORDER BY issued DESC", user.id),
     admin ? all('SELECT * FROM memberships') : all('SELECT * FROM memberships WHERE user_id=?', user.id),
     all(
       `SELECT channels.*, users.name, users.created AS joined, COALESCE(user_profiles.avatar,0) AS avatar, memberships.cohort_id
@@ -131,10 +132,10 @@ export async function buildPayload(user: SessionUser | null) {
       all('SELECT * FROM progress'),
       all('SELECT id,questions FROM lessons'),
       all('SELECT activity_log.*, users.name FROM activity_log JOIN users ON users.id=activity_log.user_id ORDER BY activity_log.created DESC LIMIT 80'),
-      all(`SELECT day, COUNT(DISTINCT user_id) AS learners, SUM(seconds) AS seconds, SUM(completed) AS completed FROM learning_days WHERE day>=? GROUP BY day ORDER BY day`, new Date(Date.now() - 29 * 86400000).toISOString().slice(0, 10)),
-      all('SELECT password_resets.token, password_resets.user_id, password_resets.expires, users.name FROM password_resets JOIN users ON users.id=password_resets.user_id WHERE expires>? ORDER BY password_resets.created DESC', Date.now()),
+      all(`SELECT day, COUNT(DISTINCT user_id) AS learners, SUM(seconds) AS seconds, SUM(completed) AS completed FROM learning_days WHERE day>=? GROUP BY day ORDER BY day`, kstDay(new Date(Date.now() - 29 * 86400000))),
+      superAdmin ? all('SELECT password_resets.token, password_resets.user_id, password_resets.expires, users.name FROM password_resets JOIN users ON users.id=password_resets.user_id WHERE expires>? ORDER BY password_resets.created DESC', Date.now()) : Promise.resolve([]),
       all('SELECT provider, user_id FROM oauth_accounts'),
-      all('SELECT certificates.*, users.name, courses.title AS course_title FROM certificates JOIN users ON users.id=certificates.user_id JOIN courses ON courses.id=certificates.course_id ORDER BY issued DESC LIMIT 200'),
+      all('SELECT certificates.*, users.name, COALESCE(courses.title, certificates.course_title) AS course_title FROM certificates JOIN users ON users.id=certificates.user_id LEFT JOIN courses ON courses.id=certificates.course_id ORDER BY issued DESC LIMIT 200'),
     ]);
     const hasAiKey = !!(await first(`SELECT id FROM settings WHERE id='ai_key'`));
     // 퀴즈 분석: 강의별 응시·통과율 + 문항별 정답률 (최근 3000건)
@@ -164,7 +165,7 @@ export async function buildPayload(user: SessionUser | null) {
       hasAiKey,
       quizStats,
       rsvps,
-      adminSettings: superAdmin ? settings : undefined,
+      adminSettings: superAdmin ? adminSettingsView(settingsMap) : undefined,
       superAdmin,
     });
   }

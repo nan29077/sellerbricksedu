@@ -1,4 +1,4 @@
-import { first, all, run, batch, stmt, now, uid, kstDay, HttpError } from '../db';
+import { first, all, run, batch, stmt, now, uid, kstDay, chunks, HttpError } from '../db';
 import { out, str, num } from '../http';
 import { passScore, watchRatio } from '../settings';
 import { notify, notifyAdmins, logActivity } from '../notify';
@@ -22,7 +22,7 @@ async function maybeIssueCertificate(userId: string, courseId: string, courseTit
   const exists = await first('SELECT id FROM certificates WHERE user_id=? AND course_id=?', userId, courseId);
   if (exists) return;
   const code = 'SB-' + crypto.getRandomValues(new Uint32Array(2)).reduce((s, v) => s + v.toString(36).toUpperCase(), '').slice(0, 10);
-  await run('INSERT INTO certificates (id,user_id,course_id,issued) VALUES (?,?,?,?)', code, userId, courseId, now());
+  await run('INSERT INTO certificates (id,user_id,course_id,issued,course_title) VALUES (?,?,?,?,?)', code, userId, courseId, now(), courseTitle);
   await notify([userId], 'certificate', `${courseTitle} 과정을 수료했습니다`, '수료증 메뉴에서 수료증을 확인하고 인쇄할 수 있어요.', '/learn/certificates');
   await logActivity(userId, 'certificate', courseTitle);
 }
@@ -43,7 +43,9 @@ export async function progress({ body, user, settings }: AuthedCtx) {
   const lesson = await publishedLesson(str(body.lessonId, 100));
   const p = await ensureProgress(user.id, lesson.id);
   const position = Math.max(0, Math.min(num(body.position), lesson.duration));
-  const delta = Math.max(0, Math.min(num(body.delta), 15));
+  // 벽시계 기준 상한: 마지막 갱신 이후 경과 시간의 2배(최대 2배속) + 여유
+  const since = Math.max(0, (Date.now() - new Date(p.updated).getTime()) / 1000);
+  const delta = Math.max(0, Math.min(num(body.delta), 15, since * 2 + 3));
   const watched = Math.min(lesson.duration, p.watched + delta);
   const ratio = watchRatio(settings), pass = passScore(settings);
   const complete = watched >= lesson.duration * ratio && (p.score ?? -1) >= pass ? 1 : 0;
@@ -89,7 +91,7 @@ export async function quiz({ body, user, settings }: AuthedCtx) {
   const p = await ensureProgress(user.id, lesson.id);
   const ratio = watchRatio(settings), pass = passScore(settings);
   const reading = !lesson.video; // 영상 미등록 강의는 학습 자료 기반 '읽기 강의'
-  if (!reading && p.watched < lesson.duration * ratio) throw new HttpError(400, `영상의 ${Math.round(ratio * 100)}% 이상을 시청하면 확인 문제를 풀 수 있습니다.`);
+  if (!reading && !p.complete && p.watched < lesson.duration * ratio) throw new HttpError(400, `영상의 ${Math.round(ratio * 100)}% 이상을 시청하면 확인 문제를 풀 수 있습니다.`);
   const qs: any[] = JSON.parse(lesson.questions);
   const answers: number[] = Array.isArray(body.answers) ? body.answers : [];
   const correct = qs.filter((q, i) => q.answer === answers[i]).length;
@@ -119,10 +121,7 @@ export async function progressReset({ body, user }: AuthedCtx) {
   const courseId = str(body.courseId, 100);
   const ids = (await all<{ id: string }>('SELECT id FROM lessons WHERE course_id=?', courseId)).map((l) => l.id);
   if (!ids.length) throw new HttpError(404, '과정을 찾을 수 없습니다.');
-  const inList = `(${ids.map(() => '?').join(',')})`;
-  await batch([
-    stmt(`UPDATE progress SET position=0,watched=0,complete=0,score=NULL,completed_at='',updated=? WHERE user_id=? AND lesson_id IN ${inList}`, now(), user.id, ...ids),
-  ]);
+  await batch(chunks(ids).map((part) => stmt(`UPDATE progress SET position=0,watched=0,complete=0,score=NULL,best_score=NULL,attempts=0,completed_at='',updated=? WHERE user_id=? AND lesson_id IN (${part.map(() => '?').join(',')})`, now(), user.id, ...part)));
   await logActivity(user.id, 'progress_reset', courseId);
   return out({ ok: true });
 }
@@ -181,7 +180,7 @@ export async function submit({ body, user }: AuthedCtx) {
 
 /** 공개 수료증 검증 — 로그인 불필요 */
 export async function verifyCertificate(code: string) {
-  const c = await first<any>('SELECT certificates.id, certificates.issued, users.name, courses.title FROM certificates JOIN users ON users.id=certificates.user_id JOIN courses ON courses.id=certificates.course_id WHERE certificates.id=?', code.toUpperCase());
+  const c = await first<any>('SELECT certificates.id, certificates.issued, users.name, COALESCE(courses.title, certificates.course_title) AS title FROM certificates JOIN users ON users.id=certificates.user_id LEFT JOIN courses ON courses.id=certificates.course_id WHERE certificates.id=?', code.toUpperCase());
   return c;
 }
 

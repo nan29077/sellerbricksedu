@@ -101,7 +101,7 @@ export function LoginPage({ redirectTo }: { redirectTo?: string }) {
               <button className="kakao" onClick={() => social('kakao')}><MessageCircle size={19} fill="currentColor" /> 카카오 로그인 {!oauth.kakao && <small>준비 중</small>}</button>
               <button className="naver" onClick={() => social('naver')}><b>N</b> 네이버 로그인 {!oauth.naver && <small>준비 중</small>}</button>
             </div>
-            <div className="demo-login">
+            {data?.settings?.demo_mode !== '0' && <div className="demo-login">
               <b>먼저 둘러보고 싶으신가요?</b>
               <p>테스트 계정으로 교육생과 관리자 화면을 체험하세요.</p>
               <div>
@@ -109,7 +109,7 @@ export function LoginPage({ redirectTo }: { redirectTo?: string }) {
                 <Button secondary small disabled={busy} onClick={async () => { try { await act('demo', { role: 'admin' }); go('/admin'); } catch (e: any) { setMessage(e.message); } }}><ShieldCheck size={16} /> 최고 관리자 체험</Button>
               </div>
               <small>체험 계정의 학습·편집 기록은 공유됩니다.</small>
-            </div>
+            </div>}
           </>
         )}
       </div>

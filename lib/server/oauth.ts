@@ -66,14 +66,16 @@ export async function finishOAuth(req: Request, provider: Provider, settings: Re
     const prof: any = await profRes.json();
     if (!profRes.ok) throw new Error('profile');
 
-    let providerId = '', email = '', name = '';
+    let providerId = '', email = '', name = '', emailVerified = false;
     if (provider === 'kakao') {
       providerId = String(prof.id || '');
-      email = prof.kakao_account?.email || '';
+      emailVerified = prof.kakao_account?.is_email_valid === true && prof.kakao_account?.is_email_verified === true;
+      email = emailVerified ? prof.kakao_account?.email || '' : '';
       name = prof.kakao_account?.profile?.nickname || prof.properties?.nickname || '';
     } else {
       providerId = String(prof.response?.id || '');
-      email = prof.response?.email || '';
+      email = prof.response?.email || ''; // 네이버는 인증된 이메일만 제공
+      emailVerified = !!email;
       name = prof.response?.name || prof.response?.nickname || '';
     }
     if (!providerId) throw new Error('id');
@@ -83,7 +85,8 @@ export async function finishOAuth(req: Request, provider: Provider, settings: Re
     // 기존 소셜 매핑 → 그 사용자. 없으면 같은 이메일의 계정에 연결, 그것도 없으면 새 계정.
     let userId = (await first<any>('SELECT user_id FROM oauth_accounts WHERE provider=? AND provider_id=?', provider, providerId))?.user_id;
     if (!userId) {
-      const existing = await first<any>('SELECT id FROM users WHERE email=?', email);
+      // 검증된 이메일일 때만 기존 계정에 연결 (계정 탈취 방지)
+      const existing = emailVerified ? await first<any>('SELECT id FROM users WHERE email=?', email) : null;
       if (existing) userId = existing.id;
       else {
         userId = uid();

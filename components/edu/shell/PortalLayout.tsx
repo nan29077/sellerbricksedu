@@ -104,7 +104,7 @@ export function PortalLayout({ children }: { children: ReactNode }) {
   if (!user || !data) return null;
   const counts: Record<string, number> = {
     bookmarks: progress.filter((p) => p.bookmark).length,
-    notices: 0,
+    notices: data.announcements.filter((a) => new Date(a.created).getTime() > nowMs - 7 * 86400000).length,
     events: (data.events ?? []).filter((e) => new Date(e.starts).getTime() > nowMs && new Date(e.starts).getTime() - nowMs < 7 * 86400000).length,
     submissions: (data.submissions ?? []).filter((s) => s.status === 'submitted').length,
     pending: (data.users ?? []).filter((u) => u.status === 'pending').length,

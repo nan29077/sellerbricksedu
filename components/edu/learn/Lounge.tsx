@@ -8,8 +8,8 @@ import { Button, CharacterAvatar, Empty, PageHead, Pill, Tabs, useLimit } from '
 
 export const POST_CATEGORIES = ['전체', '자유', '질문', '방송 후기', '팁 공유', '상품 추천', '공지'];
 
-function Author({ name, role, avatar, size = 0 }: { name: string; role: string; avatar: number; size?: number }) {
-  return <span className="author"><CharacterAvatar index={avatar} /><b>{name}</b>{role !== 'student' && <Pill tone="info"><Shield size={10} /> 운영진</Pill>}{size ? null : null}</span>;
+function Author({ name, role, avatar }: { name: string; role: string; avatar: number }) {
+  return <span className="author"><CharacterAvatar index={avatar} /><b>{name}</b>{role !== 'student' && <Pill tone="info"><Shield size={10} /> 운영진</Pill>}</span>;
 }
 
 export function LoungePage() {
@@ -61,7 +61,7 @@ export function PostPage({ id }: { id: string }) {
     let alive = true;
     fetch('/api/edu?post=' + encodeURIComponent(id), { cache: 'no-store', credentials: 'same-origin' }).then(async (r) => { const j: any = await r.json(); if (!alive) return; if (!r.ok) setError(j.error); else setDetail(j); });
     return () => { alive = false; };
-  }, [id, tick, data?.posts]);
+  }, [id, tick]);
   if (!user) return null;
   if (error) return <Empty title={error} action={<Button small secondary onClick={() => go('/learn/lounge')}>라운지로</Button>} />;
   if (!detail) return <div className="loading inline"><div className="spinner" /></div>;

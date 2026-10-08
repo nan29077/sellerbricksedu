@@ -4,8 +4,12 @@ export const dynamic = 'force-dynamic';
 
 /** R2 영상 스트리밍 — Range 요청 지원. 로그인 사용자만. */
 export async function GET(req: Request, { params }: any) {
-  if (!(await current(req))) return new Response('로그인이 필요합니다.', { status: 401 });
   const { id: rawId } = await params;
+  if (!(await current(req))) {
+    // 미리보기 강의의 영상은 비로그인도 허용
+    const preview = await first('SELECT 1 FROM lessons JOIN courses ON courses.id=lessons.course_id WHERE lessons.video=? AND lessons.preview=1 AND courses.published=1', '/api/media/' + rawId);
+    if (!preview) return new Response('로그인이 필요합니다.', { status: 401 });
+  }
   const b = bucket();
   // 강의 자료 파일: lesson_files.id 로 요청되면 R2 키와 파일명을 조회
   let id = rawId, downloadName = '';

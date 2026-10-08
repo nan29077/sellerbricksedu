@@ -26,6 +26,7 @@ export function Heatmap({ weeks = 16 }: { weeks?: number }) {
 
 export function Dashboard() {
   const { user, data, courses, lessons, progress, go, pfor, ls, pct, perform } = useEdu();
+  void ls;
   const [nowMs] = useState(() => Date.now());
   if (!user || !data) return null;
   const done = progress.filter((p) => p.complete).length;

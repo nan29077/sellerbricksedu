@@ -13,7 +13,9 @@ export interface PlayerApi { seek: (t: number) => void; currentTime: () => numbe
 export function Player({ lesson, startAt, onWatched, onEnded, onReady, nextLessonId }: {
   lesson: Lesson; startAt: number; onWatched: (delta: number, position: number) => void; onEnded: () => void; onReady?: (api: PlayerApi) => void; nextLessonId?: string;
 }) {
-  const { admin, go, act } = useEdu();
+  const { admin, go, act, user } = useEdu();
+  const cb = useRef({ onWatched, onEnded });
+  useEffect(() => { cb.current = { onWatched, onEnded }; });
   const video = useRef<HTMLVideoElement>(null);
   const wrap = useRef<HTMLDivElement>(null);
   const tick = useRef(0), elapsed = useRef(0), lastSent = useRef(0);
@@ -29,10 +31,10 @@ export function Player({ lesson, startAt, onWatched, onEnded, onReady, nextLesso
     if (!v || elapsed.current <= 0) return;
     const delta = Math.min(elapsed.current, 15);
     elapsed.current = 0;
-    onWatched(delta, v.currentTime);
-  }, [onWatched]);
+    cb.current.onWatched(delta, v.currentTime);
+  }, []);
 
-  // 재생 추적: 실제 재생된 시간만 누적(배속과 무관하게 실시간 기준), 5초마다 서버 전송
+  // 재생 추적: 실제 재생된 구간만 누적, 5초마다 서버 전송
   function track() {
     const v = video.current;
     if (!v) return;
@@ -40,6 +42,7 @@ export function Player({ lesson, startAt, onWatched, onEnded, onReady, nextLesso
     const now = performance.now();
     if (tick.current) {
       const d = (now - tick.current) / 1000;
+      // 배속으로 본 만큼 콘텐츠 시간으로 인정 (최대 2배)
       if (d > 0 && d < 1.5 && !v.seeking && !v.paused) elapsed.current += d * Math.min(v.playbackRate, 2);
     }
     tick.current = now;
@@ -54,7 +57,7 @@ export function Player({ lesson, startAt, onWatched, onEnded, onReady, nextLesso
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lesson.id]);
   useEffect(() => { if (video.current) video.current.playbackRate = speed; try { localStorage.setItem('edu_speed', String(speed)); } catch {} }, [speed]);
-  useEffect(() => () => flush(), [flush, lesson.id]);
+  useEffect(() => () => flush(), [flush]);
 
   // 자동 다음 강의 카운트다운
   useEffect(() => {
@@ -118,7 +121,7 @@ export function Player({ lesson, startAt, onWatched, onEnded, onReady, nextLesso
           onPause={() => { flush(); tick.current = 0; }}
           onSeeking={() => { tick.current = 0; }}
           onRateChange={() => { const r = video.current?.playbackRate; if (r && SPEEDS.includes(r)) setSpeed(r); }}
-          onEnded={async () => { flush(); tick.current = 0; await onEnded(); if (nextLessonId) setCountdown(8); }}
+          onEnded={async () => { flush(); tick.current = 0; await cb.current.onEnded(); if (nextLessonId) setCountdown(8); }}
         />
         {resumed && <button className="player-resume" onClick={() => { video.current!.currentTime = 0; setResumed(false); }}><RotateCcw size={14} /> {fmt(startAt)}부터 이어보기 중 · 처음부터</button>}
         {countdown !== null && (
@@ -152,7 +155,7 @@ export function Player({ lesson, startAt, onWatched, onEnded, onReady, nextLesso
             const active = time >= c.at && time < end;
             return (
               <li key={i}>
-                <button className={active ? 'active' : ''} onClick={() => { const v = video.current!; v.currentTime = c.at; v.play().catch(() => {}); act('progress', { lessonId: lesson.id, position: c.at, delta: 0 }, true); }}>
+                <button className={active ? 'active' : ''} onClick={() => { const v = video.current!; v.currentTime = c.at; v.play().catch(() => {}); if (user) act('progress', { lessonId: lesson.id, position: c.at, delta: 0 }, true); }}>
                   <span>{fmt(c.at)}</span><b>{c.title}</b><small>{fmt(end - c.at)}</small>
                 </button>
               </li>

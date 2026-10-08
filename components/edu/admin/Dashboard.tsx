@@ -15,9 +15,7 @@ export function AdminDashboard() {
   const finished = ps.filter((p) => p.complete).length;
   const today = kstDay();
   const series = Array.from({ length: 30 }, (_, i) => { const day = addDays(today, i - 29); const d = (data.daily ?? []).find((x) => x.day === day); return { day, label: day.slice(5).replace('-', '/'), learners: d?.learners || 0, minutes: Math.round((d?.seconds || 0) / 60), completed: d?.completed || 0 }; });
-  const weekActive = new Set((data.daily ?? []).filter((d) => d.day >= addDays(today, -6)).flatMap((d) => Array(d.learners).fill(d.day))).size; // 근사치
   const activeWeek = (data.daily ?? []).filter((d) => d.day >= addDays(today, -6)).reduce((m, d) => Math.max(m, d.learners), 0);
-  void weekActive;
   const funnel = [
     ['가입', students.length],
     ['승인', students.filter((u) => u.status === 'active').length],

@@ -94,14 +94,15 @@ export async function destroySession(req: Request) {
   return setCookie(SESSION_COOKIE, '', 0, req);
 }
 
-/** 로그인 시도 제한: 15분 내 10회 */
+/** 로그인 시도 제한: 15분 내 이메일 기준 10회, IP 기준 60회(공용 IP 고려) */
 const WINDOW = 15 * 60 * 1000;
 const LIMIT = 10;
 export async function checkRateLimit(req: Request, email: string) {
   const keys = ['ip:' + clientIp(req), 'email:' + email];
   const rows = await all<{ key: string; count: number; first: number }>(`SELECT * FROM login_attempts WHERE key IN (?,?)`, ...keys);
   for (const r of rows) {
-    if (Date.now() - r.first < WINDOW && r.count >= LIMIT) {
+    const limit = r.key.startsWith('ip:') ? LIMIT * 6 : LIMIT;
+    if (Date.now() - r.first < WINDOW && r.count >= limit) {
       throw new HttpError(429, '로그인 시도가 너무 많습니다. 15분 후 다시 시도해 주세요.');
     }
   }
