@@ -41,7 +41,7 @@ export function InfoPage({ kind }: { kind: 'guide' | 'notices' | 'faq' }) {
       )) : <Empty title="등록된 공지가 없어요" description="새로운 교육 안내가 등록되면 이곳에서 확인할 수 있습니다." />)}
       {kind === 'faq' && (
         <div>
-          {FAQ.map(([q, a]) => <details className="panel faq-item" key={q}><summary>{q}<Plus size={19} /></summary><p>{a}</p></details>)}
+          {((data?.faqs?.length ? data.faqs.map((f) => [f.question, f.answer]) : FAQ) as [string, string][]).map(([q, a]) => <details className="panel faq-item" key={q}><summary>{q}<Plus size={19} /></summary><p className="full">{a}</p></details>)}
           <div className="info-note" style={{ marginTop: 20 }}>더 궁금한 내용은 로그인 후 학습 Q&A에서 질문해 주세요. <button className="text-link" onClick={() => go('/login')}>로그인</button></div>
         </div>
       )}

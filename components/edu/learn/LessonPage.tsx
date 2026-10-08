@@ -138,6 +138,7 @@ export function LessonPage({ lesson }: { lesson: Lesson }) {
                 <div className="lesson-info">
                   <h3><FileText size={18} /> 학습 자료</h3>
                   {lesson.resource ? <pre className="resource-text">{lesson.resource}</pre> : <p className="muted">등록된 학습 자료가 없습니다.</p>}
+                  {(data?.lessonFiles ?? []).filter((f) => f.lesson_id === lesson.id).length > 0 && <ul className="file-list">{(data?.lessonFiles ?? []).filter((f) => f.lesson_id === lesson.id).map((f) => <li key={f.id}><a href={'/api/media/' + f.id} target="_blank" rel="noopener noreferrer"><Download size={14} /> {f.name}</a><small>{Math.round(f.size / 1024)}KB</small></li>)}</ul>}
                   <Button secondary small onClick={() => downloadText(lesson.title + '-학습자료.txt', lesson.resource || '학습 자료가 아직 등록되지 않았습니다.')}><Download size={16} /> 학습 자료 받기</Button>
                 </div>
               )}
@@ -149,7 +150,7 @@ export function LessonPage({ lesson }: { lesson: Lesson }) {
                 <div><span className="eyebrow">학습 확인</span><h2>배운 내용을 확인해 볼까요?</h2></div>
                 <div className="quiz-stats">
                   <Pill>{pass}점 이상 통과</Pill>
-                  {lp.attempts ? <Pill tone="info">{lp.attempts}회 응시 · 최고 {lp.best_score ?? lp.score}점</Pill> : null}
+                  {lp.attempts ? <Pill tone="info" className="attempt-pill" >{lp.attempts}회 응시 · 최고 {lp.best_score ?? lp.score}점{(data?.quizAttempts ?? []).filter((a) => a.lesson_id === lesson.id).slice(0, 5).length > 1 ? ' · 최근 ' + (data?.quizAttempts ?? []).filter((a) => a.lesson_id === lesson.id).slice(0, 5).map((a) => a.score).join('→') : ''}</Pill> : null}
                 </div>
               </div>
               {!canQuiz && <div className="info-note"><Lock size={17} /> 영상의 {Math.round(ratio * 100)}% 이상을 시청하면 확인 문제를 풀 수 있어요. <ProgressBar value={Math.min(100, Math.round((watchedPct / (ratio * 100)) * 100))} small /></div>}

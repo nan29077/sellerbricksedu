@@ -56,8 +56,11 @@ export async function buildPayload(user: SessionUser | null) {
     : await all('SELECT *, NULL AS cohort_name FROM announcements WHERE cohort_id IS NULL ORDER BY pinned DESC, created DESC LIMIT 20');
   const cohorts = await all('SELECT * FROM cohorts ORDER BY starts DESC, name');
 
-  const base: any = { user, settings, oauth, courses: coursesOut, lessons, reviews, announcements, cohorts };
-  if (!user) return { ...base, progress: [], messages: [], memberships: [], channels: [], visits: [], notifications: [], notes: [], learningDays: [], certificates: [], assignments: [], submissions: [] };
+  const faqs = await all('SELECT * FROM faqs WHERE published=1 ORDER BY position');
+  const paths = (await all(admin ? 'SELECT * FROM paths ORDER BY position' : 'SELECT * FROM paths WHERE published=1 ORDER BY position')).map((p: any) => ({ ...p, courses: parseJson(p.courses, []) }));
+  const lessonFiles = await all('SELECT id,lesson_id,name,size,type,created FROM lesson_files ORDER BY created');
+  const base: any = { user, settings, oauth, courses: coursesOut, lessons, reviews, announcements, cohorts, faqs, paths, lessonFiles };
+  if (!user) return { ...base, progress: [], messages: [], memberships: [], channels: [], visits: [], notifications: [], notes: [], learningDays: [], certificates: [], assignments: [], submissions: [], events: [], posts: [] };
 
   const [progress, notes, learningDays, certificates, memberships, channels, visits, notifications, assignments, submissions] = await Promise.all([
     all('SELECT * FROM progress WHERE user_id=?', user.id),
@@ -94,7 +97,26 @@ export async function buildPayload(user: SessionUser | null) {
     ...(admin ? [user.id] : [user.id, user.id]),
   );
 
-  const result: any = { ...base, progress, notes, learningDays, certificates, memberships, channels, visits, notifications, assignments, submissions, messages };
+  const myCohort = admin ? null : (await first<{ cohort_id: string }>('SELECT cohort_id FROM memberships WHERE user_id=?', user.id))?.cohort_id || null;
+  const events = await all(
+    `SELECT events.*, cohorts.name AS cohort_name, (SELECT COUNT(*) FROM event_rsvps WHERE event_id=events.id) AS going,
+            EXISTS(SELECT 1 FROM event_rsvps WHERE event_id=events.id AND user_id=?) AS mine
+     FROM events LEFT JOIN cohorts ON cohorts.id=events.cohort_id
+     ${admin ? '' : 'WHERE events.cohort_id IS NULL OR events.cohort_id=?'} ORDER BY events.starts DESC LIMIT 100`,
+    user.id, ...(admin ? [] : [myCohort || '']),
+  );
+  const posts = await all(
+    `SELECT posts.id, posts.user_id, posts.category, posts.title, substr(posts.body,1,200) AS excerpt, posts.pinned, posts.locked, posts.created, posts.updated,
+            users.name, users.role AS author_role, COALESCE(user_profiles.avatar,0) AS avatar, memberships.cohort_id,
+            (SELECT COUNT(*) FROM comments WHERE post_id=posts.id) AS comments,
+            (SELECT COUNT(*) FROM post_likes WHERE post_id=posts.id) AS likes,
+            EXISTS(SELECT 1 FROM post_likes WHERE post_id=posts.id AND user_id=?) AS liked
+     FROM posts JOIN users ON users.id=posts.user_id LEFT JOIN user_profiles ON user_profiles.user_id=users.id LEFT JOIN memberships ON memberships.user_id=users.id
+     ORDER BY posts.pinned DESC, posts.created DESC LIMIT 300`,
+    user.id,
+  );
+  const quizAttempts = await all('SELECT lesson_id, score, passed, created FROM quiz_attempts WHERE user_id=? ORDER BY created DESC LIMIT 200', user.id);
+  const result: any = { ...base, progress, notes, learningDays, certificates, memberships, channels, visits, notifications, assignments, submissions, messages, events, posts, quizAttempts };
 
   if (admin) {
     const [users, allProgress, questions, activity, daily, resets, oauthAccounts, allCertificates] = await Promise.all([
@@ -115,6 +137,19 @@ export async function buildPayload(user: SessionUser | null) {
       all('SELECT certificates.*, users.name, courses.title AS course_title FROM certificates JOIN users ON users.id=certificates.user_id JOIN courses ON courses.id=certificates.course_id ORDER BY issued DESC LIMIT 200'),
     ]);
     const hasAiKey = !!(await first(`SELECT id FROM settings WHERE id='ai_key'`));
+    // 퀴즈 분석: 강의별 응시·통과율 + 문항별 정답률 (최근 3000건)
+    const attempts = await all<any>('SELECT lesson_id, answers, score, passed FROM quiz_attempts ORDER BY created DESC LIMIT 3000');
+    const quizStats: Record<string, { attempts: number; passed: number; avg: number; perQuestion: { correct: number; total: number }[] }> = {};
+    for (const a of attempts) {
+      const qdef = questions.find((l: any) => l.id === a.lesson_id);
+      const answersArr = parseJson(a.answers, []);
+      const qs = parseJson(qdef?.questions || '[]', []);
+      const st = (quizStats[a.lesson_id] ||= { attempts: 0, passed: 0, avg: 0, perQuestion: qs.map(() => ({ correct: 0, total: 0 })) });
+      st.attempts++; st.passed += a.passed ? 1 : 0; st.avg += a.score;
+      qs.forEach((q: any, i: number) => { if (!st.perQuestion[i]) st.perQuestion[i] = { correct: 0, total: 0 }; st.perQuestion[i].total++; if (answersArr[i] === q.answer) st.perQuestion[i].correct++; });
+    }
+    for (const k of Object.keys(quizStats)) quizStats[k].avg = quizStats[k].attempts ? Math.round(quizStats[k].avg / quizStats[k].attempts) : 0;
+    const rsvps = await all('SELECT event_rsvps.event_id, event_rsvps.user_id, users.name, users.email FROM event_rsvps JOIN users ON users.id=event_rsvps.user_id');
     // 수료 후 강의가 추가된 과정: 교육생에게 '추가 강의' 안내용
 
     Object.assign(result, {
@@ -127,6 +162,8 @@ export async function buildPayload(user: SessionUser | null) {
       oauthAccounts,
       allCertificates,
       hasAiKey,
+      quizStats,
+      rsvps,
       adminSettings: superAdmin ? settings : undefined,
       superAdmin,
     });

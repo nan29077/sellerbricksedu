@@ -85,6 +85,15 @@ export interface AdminUser {
 export interface DailyStat { day: string; learners: number; seconds: number; completed: number }
 export interface Activity { id: string; user_id: string; kind: string; detail: string; created: string; name: string }
 
+export interface Faq { id: string; question: string; answer: string; position: number; published: number }
+export interface LearningPath { id: string; title: string; description: string; courses: string[]; position: number; published: number; created: string }
+export interface LessonFile { id: string; lesson_id: string; name: string; size: number; type: string; created: string }
+export interface EduEvent { id: string; title: string; description: string; starts: string; ends: string; link: string; location: string; cohort_id: string | null; capacity: number; created_by: string; created: string; cohort_name: string | null; going: number; mine: number }
+export interface Post { id: string; user_id: string; category: string; title: string; excerpt: string; body?: string; pinned: number; locked: number; created: string; updated: string; name: string; author_role: Role; avatar: number; cohort_id: string | null; comments: number; likes: number; liked: number }
+export interface Comment { id: string; post_id: string; user_id: string; body: string; created: string; name: string; author_role: Role; avatar: number }
+export interface QuizAttempt { lesson_id: string; score: number; passed: number; created: string }
+export interface QuizStat { attempts: number; passed: number; avg: number; perQuestion: { correct: number; total: number }[] }
+
 export interface Payload {
   user: User | null;
   settings: Record<string, string>;
@@ -105,7 +114,15 @@ export interface Payload {
   assignments: Assignment[];
   submissions: Submission[];
   messages: Message[];
+  faqs: Faq[];
+  paths: LearningPath[];
+  lessonFiles: LessonFile[];
+  events: EduEvent[];
+  posts: Post[];
+  quizAttempts?: QuizAttempt[];
   // admin only
+  quizStats?: Record<string, QuizStat>;
+  rsvps?: { event_id: string; user_id: string; name: string; email: string }[];
   users?: AdminUser[];
   allProgress?: Progress[];
   questions?: { id: string; questions: Question[] }[];

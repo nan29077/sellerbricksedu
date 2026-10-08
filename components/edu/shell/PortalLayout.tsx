@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { GraduationCap, BookOpen, Bookmark, LayoutDashboard, Users, Video, Settings, LogOut, ChevronRight, Menu, Bell, MessageCircle, PenLine, Sparkles, BarChart3, Trophy, Layers, Megaphone, ClipboardList, Award, Search, X, Activity, type LucideIcon } from 'lucide-react';
+import { GraduationCap, BookOpen, Bookmark, LayoutDashboard, Users, Video, Settings, LogOut, ChevronRight, Menu, Bell, MessageCircle, PenLine, Sparkles, BarChart3, Trophy, Layers, Megaphone, ClipboardList, Award, Search, X, Activity, Route, CalendarDays, MessagesSquare, HelpCircle, type LucideIcon } from 'lucide-react';
 import { useEdu } from '../../../lib/edu-store';
 import { relTime } from '../../../lib/learning';
 import { CharacterAvatar, Logo } from '../ui';
@@ -10,6 +10,8 @@ type MenuItem = [string, string, LucideIcon, string?];
 const MENU_STUDENT: MenuItem[] = [
   ['/learn', '학습 대시보드', LayoutDashboard],
   ['/learn/courses', '나의 강의실', BookOpen],
+  ['/learn/paths', '학습 경로', Route],
+  ['/learn/events', '라이브 세션·일정', CalendarDays, 'events'],
   ['/learn/assignments', '과제', ClipboardList],
   ['/learn/bookmarks', '책갈피', Bookmark, 'bookmarks'],
   ['/learn/notes', '학습 노트', PenLine],
@@ -17,18 +19,24 @@ const MENU_STUDENT: MenuItem[] = [
   ['/learn/certificates', '수료증', Trophy],
   ['/learn/questions', '학습 Q&A', MessageCircle],
   ['/learn/notices', '공지사항', Megaphone, 'notices'],
+  ['/learn/lounge', '셀러 라운지', MessagesSquare],
   ['/learn/community', '셀러 채널 교류', Users],
 ];
 const MENU_ADMIN: MenuItem[] = [
   ['/admin', '운영 대시보드', LayoutDashboard],
   ['/admin/courses', '교육 과정 관리', Layers],
   ['/admin/videos', '영상·퀴즈 관리', Video],
+  ['/admin/paths', '학습 경로', Route],
+  ['/admin/quiz', '퀴즈 분석', BarChart3],
   ['/admin/assignments', '과제 관리', ClipboardList, 'submissions'],
+  ['/admin/events', '라이브 세션·일정', CalendarDays],
   ['/admin/members', '교육생 관리', Users, 'pending'],
   ['/admin/cohorts', '기수 관리', GraduationCap],
   ['/admin/progress', '학습 현황', BarChart3],
   ['/admin/questions', '질문 관리', MessageCircle, 'questions'],
   ['/admin/announcements', '공지 관리', Megaphone],
+  ['/admin/faqs', 'FAQ 관리', HelpCircle],
+  ['/admin/lounge', '셀러 라운지', MessagesSquare],
   ['/admin/activity', '활동 로그', Activity],
   ['/admin/community', '셀러 채널 교류', Users],
   ['/admin/ai', 'AI 제작 스튜디오', Sparkles],
@@ -83,10 +91,12 @@ function NotificationBell() {
 export function PortalLayout({ children }: { children: ReactNode }) {
   const { path, go, user, admin, superAdmin, data, mobile, setMobile, act, setToast, progress } = useEdu();
   const [search, setSearch] = useState('');
+  const [nowMs] = useState(() => Date.now());
   if (!user || !data) return null;
   const counts: Record<string, number> = {
     bookmarks: progress.filter((p) => p.bookmark).length,
     notices: 0,
+    events: (data.events ?? []).filter((e) => new Date(e.starts).getTime() > nowMs && new Date(e.starts).getTime() - nowMs < 7 * 86400000).length,
     submissions: (data.submissions ?? []).filter((s) => s.status === 'submitted').length,
     pending: (data.users ?? []).filter((u) => u.status === 'pending').length,
     questions: data.messages.filter((m) => !m.reply).length,

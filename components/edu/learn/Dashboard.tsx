@@ -1,8 +1,10 @@
 'use client';
-import { BookOpen, CheckCircle2, Clock, Trophy, Play, ChevronRight, Flame, Target, GraduationCap, Megaphone, ClipboardList, Award, Pin } from 'lucide-react';
+import { BookOpen, CheckCircle2, Clock, Trophy, Play, ChevronRight, Flame, Target, GraduationCap, Megaphone, ClipboardList, Award, Pin, CalendarDays, MessagesSquare } from 'lucide-react';
+import { useState } from 'react';
 import { useEdu } from '../../../lib/edu-store';
 import { fmt, fmtLong, fmtShort, streak, thisWeek, heatmap, badges, kstDay } from '../../../lib/learning';
 import { Button, PageHead, Ring, StatCard, Pill } from '../ui';
+import { fmtDT } from './EventsPaths';
 import { CourseCard } from '../public/CourseCard';
 
 export function Heatmap({ weeks = 16 }: { weeks?: number }) {
@@ -24,6 +26,7 @@ export function Heatmap({ weeks = 16 }: { weeks?: number }) {
 
 export function Dashboard() {
   const { user, data, courses, lessons, progress, go, pfor, ls, pct, perform } = useEdu();
+  const [nowMs] = useState(() => Date.now());
   if (!user || !data) return null;
   const done = progress.filter((p) => p.complete).length;
   const last = [...progress].sort((a, b) => b.updated.localeCompare(a.updated)).find((p) => !p.complete && p.watched > 0);
@@ -96,6 +99,9 @@ export function Dashboard() {
         </div>
       )}
 
+      {(() => { const up = data.events.filter((e) => new Date(e.ends || e.starts).getTime() > nowMs).sort((a, b) => a.starts.localeCompare(b.starts))[0]; return up ? (
+        <div className="event-banner"><CalendarDays size={20} /><div><b>{up.title}</b><small>{fmtDT(up.starts)} · {up.mine ? '참석 신청 완료' : `${up.going}명 참석 예정`}</small></div><Button small secondary={!!up.mine} onClick={() => go('/learn/events')}>{up.mine ? '일정 보기' : '참석 신청'}</Button></div>
+      ) : null; })()}
       <div className="dash-two">
         <div className="panel">
           <div className="section-heading"><div><h3><Megaphone size={18} className="purple" /> 공지사항</h3></div><button onClick={() => go('/learn/notices')}>전체 보기 <ChevronRight size={15} /></button></div>
@@ -113,6 +119,12 @@ export function Dashboard() {
       </div>
       <div className="course-grid portal-courses">{(inProgress.length ? inProgress : recommended).slice(0, 3).map((c) => <CourseCard key={c.id} course={c} learning />)}</div>
 
+      {data.posts.length > 0 && (
+        <div className="panel">
+          <div className="section-heading"><div><h3><MessagesSquare size={18} className="purple" /> 셀러 라운지 새 글</h3></div><button onClick={() => go('/learn/lounge')}>라운지 가기 <ChevronRight size={15} /></button></div>
+          {data.posts.slice(0, 4).map((p) => <button className="list-row" key={p.id} onClick={() => go('/learn/lounge/' + p.id)}><Pill>{p.category}</Pill><b>{p.title}</b><small>{p.name} · 댓글 {p.comments}</small></button>)}
+        </div>
+      )}
       <div className="dashboard-bottom">
         <div className="panel">
           <div className="section-heading"><div><h3><Award size={18} className="purple" /> 나의 배지</h3></div><button onClick={() => go('/learn/achievements')}>전체 보기 <ChevronRight size={15} /></button></div>
