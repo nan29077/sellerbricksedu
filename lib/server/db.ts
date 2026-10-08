@@ -106,6 +106,13 @@ export async function migrate() {
     }
   }
   await run(`INSERT INTO settings (id,value) VALUES ('schema_version',?) ON CONFLICT(id) DO UPDATE SET value=excluded.value`, SCHEMA_VERSION);
+  // wrangler `d1 migrations apply` 가 같은 변경을 다시 적용하지 않도록 기록 (테이블이 없으면 무시)
+  try {
+    await db.prepare(`CREATE TABLE IF NOT EXISTS d1_migrations (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)`).run();
+    await db.prepare(`INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0000_strange_celestials.sql'),('0001_sad_black_crow.sql'),('0002_edu_v2.sql')`).run();
+  } catch (e) {
+    console.warn('migration bookkeeping skipped', e);
+  }
   migrated = true;
 }
 

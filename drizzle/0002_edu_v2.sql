@@ -1,4 +1,4 @@
-CREATE TABLE `activity_log` (
+CREATE TABLE IF NOT EXISTS `activity_log` (
 	`id` text PRIMARY KEY NOT NULL,
 	`user_id` text NOT NULL,
 	`kind` text NOT NULL,
@@ -6,7 +6,7 @@ CREATE TABLE `activity_log` (
 	`created` text NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE `announcements` (
+CREATE TABLE IF NOT EXISTS `announcements` (
 	`id` text PRIMARY KEY NOT NULL,
 	`title` text NOT NULL,
 	`body` text NOT NULL,
@@ -16,7 +16,7 @@ CREATE TABLE `announcements` (
 	`created` text NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE `assignments` (
+CREATE TABLE IF NOT EXISTS `assignments` (
 	`id` text PRIMARY KEY NOT NULL,
 	`course_id` text NOT NULL,
 	`lesson_id` text,
@@ -28,14 +28,14 @@ CREATE TABLE `assignments` (
 	`created` text NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE `certificates` (
+CREATE TABLE IF NOT EXISTS `certificates` (
 	`id` text PRIMARY KEY NOT NULL,
 	`user_id` text NOT NULL,
 	`course_id` text NOT NULL,
 	`issued` text NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE `learning_days` (
+CREATE TABLE IF NOT EXISTS `learning_days` (
 	`user_id` text NOT NULL,
 	`day` text NOT NULL,
 	`seconds` real DEFAULT 0 NOT NULL,
@@ -43,7 +43,7 @@ CREATE TABLE `learning_days` (
 	PRIMARY KEY(`user_id`, `day`)
 );
 --> statement-breakpoint
-CREATE TABLE `lesson_notes` (
+CREATE TABLE IF NOT EXISTS `lesson_notes` (
 	`id` text PRIMARY KEY NOT NULL,
 	`user_id` text NOT NULL,
 	`lesson_id` text NOT NULL,
@@ -52,13 +52,13 @@ CREATE TABLE `lesson_notes` (
 	`created` text NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE `login_attempts` (
+CREATE TABLE IF NOT EXISTS `login_attempts` (
 	`key` text PRIMARY KEY NOT NULL,
 	`count` integer DEFAULT 0 NOT NULL,
 	`first` integer NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE `notifications` (
+CREATE TABLE IF NOT EXISTS `notifications` (
 	`id` text PRIMARY KEY NOT NULL,
 	`user_id` text NOT NULL,
 	`type` text NOT NULL,
@@ -69,7 +69,7 @@ CREATE TABLE `notifications` (
 	`created` text NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE `oauth_accounts` (
+CREATE TABLE IF NOT EXISTS `oauth_accounts` (
 	`provider` text NOT NULL,
 	`provider_id` text NOT NULL,
 	`user_id` text NOT NULL,
@@ -77,20 +77,20 @@ CREATE TABLE `oauth_accounts` (
 	PRIMARY KEY(`provider`, `provider_id`)
 );
 --> statement-breakpoint
-CREATE TABLE `password_resets` (
+CREATE TABLE IF NOT EXISTS `password_resets` (
 	`token` text PRIMARY KEY NOT NULL,
 	`user_id` text NOT NULL,
 	`expires` integer NOT NULL,
 	`created` text NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE `question_votes` (
+CREATE TABLE IF NOT EXISTS `question_votes` (
 	`message_id` text NOT NULL,
 	`user_id` text NOT NULL,
 	PRIMARY KEY(`message_id`, `user_id`)
 );
 --> statement-breakpoint
-CREATE TABLE `reviews` (
+CREATE TABLE IF NOT EXISTS `reviews` (
 	`user_id` text NOT NULL,
 	`course_id` text NOT NULL,
 	`rating` integer NOT NULL,
@@ -99,7 +99,7 @@ CREATE TABLE `reviews` (
 	PRIMARY KEY(`user_id`, `course_id`)
 );
 --> statement-breakpoint
-CREATE TABLE `submissions` (
+CREATE TABLE IF NOT EXISTS `submissions` (
 	`id` text PRIMARY KEY NOT NULL,
 	`assignment_id` text NOT NULL,
 	`user_id` text NOT NULL,
