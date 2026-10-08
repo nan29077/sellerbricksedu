@@ -90,9 +90,7 @@ export function badges(progress: Progress[], days: LearningDay[], certificates: 
 
 export const platformMark: Record<string, string> = { youtube: '▶', instagram: '◎', tiktok: '♪', x: 'X', naver: 'N' };
 export const platformName: Record<string, string> = { youtube: 'YouTube', instagram: 'Instagram', tiktok: 'TikTok', x: 'X', naver: '네이버' };
-export const PLATFORMS = ['youtube', 'instagram', 'tiktok', 'x', 'naver'];
-export const CATEGORIES = ['전체', '입문', '방송 준비', '실전 판매', '운영·정산'];
-export const LEVELS = ['입문', '초급', '중급'];
+export { PLATFORMS, CATEGORIES, LEVELS } from './constants';
 
 export function downloadText(name: string, text: string, type = 'text/plain;charset=utf-8') {
   const a = document.createElement('a');

@@ -1,9 +1,10 @@
 'use client';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { GraduationCap, BookOpen, Bookmark, LayoutDashboard, Users, Video, Settings, LogOut, ChevronRight, Menu, Bell, MessageCircle, PenLine, Sparkles, BarChart3, Trophy, Layers, Megaphone, ClipboardList, Award, Search, X, type LucideIcon } from 'lucide-react';
+import { GraduationCap, BookOpen, Bookmark, LayoutDashboard, Users, Video, Settings, LogOut, ChevronRight, Menu, Bell, MessageCircle, PenLine, Sparkles, BarChart3, Trophy, Layers, Megaphone, ClipboardList, Award, Search, X, Activity, type LucideIcon } from 'lucide-react';
 import { useEdu } from '../../../lib/edu-store';
 import { relTime } from '../../../lib/learning';
 import { CharacterAvatar, Logo } from '../ui';
+import { ROLES } from '../../../lib/constants';
 
 type MenuItem = [string, string, LucideIcon, string?];
 const MENU_STUDENT: MenuItem[] = [
@@ -28,6 +29,7 @@ const MENU_ADMIN: MenuItem[] = [
   ['/admin/progress', '학습 현황', BarChart3],
   ['/admin/questions', '질문 관리', MessageCircle, 'questions'],
   ['/admin/announcements', '공지 관리', Megaphone],
+  ['/admin/activity', '활동 로그', Activity],
   ['/admin/community', '셀러 채널 교류', Users],
   ['/admin/ai', 'AI 제작 스튜디오', Sparkles],
   ['/admin/settings', '연동 설정', Settings],
@@ -54,7 +56,7 @@ function NotificationBell() {
         <div className="notif-panel" role="dialog" aria-label="알림">
           <div className="notif-head">
             <b>알림</b>
-            {unread > 0 && <button onClick={() => act('notif_read', { all: true }, true).then(() => act('notif_read', { all: true }))}>모두 읽음</button>}
+            {unread > 0 && <button onClick={() => act('notif_read', { all: true })}>모두 읽음</button>}
             <button onClick={() => setOpen(false)} aria-label="닫기"><X size={16} /></button>
           </div>
           {list.length ? (
@@ -79,7 +81,7 @@ function NotificationBell() {
 }
 
 export function PortalLayout({ children }: { children: ReactNode }) {
-  const { path, go, user, admin, data, mobile, setMobile, act, setToast, progress } = useEdu();
+  const { path, go, user, admin, superAdmin, data, mobile, setMobile, act, setToast, progress } = useEdu();
   const [search, setSearch] = useState('');
   if (!user || !data) return null;
   const counts: Record<string, number> = {
@@ -89,7 +91,7 @@ export function PortalLayout({ children }: { children: ReactNode }) {
     pending: (data.users ?? []).filter((u) => u.status === 'pending').length,
     questions: data.messages.filter((m) => !m.reply).length,
   };
-  const menus = admin ? MENU_ADMIN : MENU_STUDENT;
+  const menus = admin ? MENU_ADMIN.filter(([p]) => superAdmin || p !== '/admin/settings') : MENU_STUDENT;
   const results = search.trim().length > 1
     ? data.lessons.filter((l) => l.title.includes(search) || l.summary.includes(search)).slice(0, 6)
     : [];
@@ -117,7 +119,7 @@ export function PortalLayout({ children }: { children: ReactNode }) {
           <button className={'sidebar-utility ' + (path.endsWith('/settings') || path.endsWith('/account-settings') ? 'selected' : '')} onClick={() => go(admin ? '/admin/account-settings' : '/learn/settings')}><Settings size={17} /> 설정</button>
           <button className="profile-button" onClick={() => go(admin ? '/admin/profile' : '/learn/profile')}>
             <CharacterAvatar index={user.avatar} />
-            <span><b>{user.name}</b><small>{admin ? '최고 관리자' : '셀러 교육생'}</small></span>
+            <span><b>{user.name}</b><small>{ROLES[user.role] || '셀러 교육생'}</small></span>
             <Settings size={17} />
           </button>
           <button className="logout" onClick={async () => { try { await act('logout'); location.href = '/login'; } catch (e: any) { setToast(e.message); } }}><LogOut size={17} /> 로그아웃</button>
@@ -128,7 +130,7 @@ export function PortalLayout({ children }: { children: ReactNode }) {
         <header className="portal-header">
           <div>
             <button className="mobile-menu" onClick={() => setMobile(!mobile)} aria-label="메뉴 열기"><Menu size={23} /></button>
-            <span>{admin ? '관리자 센터' : '나의 학습 공간'}</span>
+            <span>{admin ? (superAdmin ? '관리자 센터' : '운영 관리자 센터') : '나의 학습 공간'}</span>
           </div>
           <div className="portal-search">
             <Search size={16} />

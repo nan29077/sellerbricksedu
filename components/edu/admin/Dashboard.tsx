@@ -26,7 +26,7 @@ export function AdminDashboard() {
     ['수료', new Set((data.allCertificates ?? []).map((c) => c.user_id)).size],
   ] as [string, number][];
   const pendingTasks: [any, string, number, string][] = [
-    [Users, '승인 대기 교육생', students.filter((u) => u.status === 'pending').length, '/admin/members'],
+    [Users, '승인 대기 교육생', students.filter((u) => u.status === 'pending').length, '/admin/members?status=pending'],
     [MessageCircle, '답변 대기 질문', data.messages.filter((m) => !m.reply).length, '/admin/questions'],
     [ClipboardList, '검토 대기 과제', (data.submissions ?? []).filter((s) => s.status === 'submitted').length, '/admin/assignments'],
     [Video, '영상 등록 예정', lessons.filter((l) => !l.video).length, '/admin/videos'],
@@ -74,7 +74,7 @@ export function AdminDashboard() {
           })}
         </div>
         <div className="panel">
-          <div className="section-heading"><h2>최근 활동</h2></div>
+          <div className="section-heading"><h2>최근 활동</h2><button onClick={() => go('/admin/activity')}>전체 보기 <ChevronRight size={16} /></button></div>
           {(data.activity ?? []).length ? <ul className="activity-list">{(data.activity ?? []).slice(0, 12).map((a) => <li key={a.id}><b>{a.name}</b> {KIND_LABEL[a.kind] || a.kind}{a.detail && <span> · {a.detail}</span>}<small>{relTime(a.created)}</small></li>)}</ul> : <p className="muted">아직 활동 기록이 없어요.</p>}
         </div>
       </div>

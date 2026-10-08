@@ -1,6 +1,7 @@
 'use client';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { Course, Lesson, Payload, Progress, User } from './types';
+import { isStaff } from './constants';
 
 export type ModalState = { type: string; [k: string]: any } | null;
 export type ConfirmState = { title: string; body?: string; danger?: boolean; confirmLabel?: string; resolve: (ok: boolean) => void } | null;
@@ -17,6 +18,7 @@ interface Store {
   confirm: ConfirmState;
   user: User | null;
   admin: boolean;
+  superAdmin: boolean;
   courses: Course[];
   lessons: Lesson[];
   progress: Progress[];
@@ -85,7 +87,10 @@ export function EduProvider({ children }: { children: ReactNode }) {
       if (document.visibilityState === 'visible') load();
     };
     document.addEventListener('visibilitychange', vis);
+    // 알림·답변 등 관리자↔교육생 간 변경 사항을 주기적으로 동기화
+    const poll = setInterval(() => { if (document.visibilityState === 'visible') load(); }, 90000);
     return () => {
+      clearInterval(poll);
       window.removeEventListener('popstate', fn);
       document.removeEventListener('visibilitychange', vis);
     };
@@ -168,7 +173,7 @@ export function EduProvider({ children }: { children: ReactNode }) {
 
   const value: Store = {
     path, data, error, busy, toast, modal, editor, mobile, confirm,
-    user, admin: user?.role === 'admin', courses, lessons, progress,
+    user, admin: isStaff(user?.role), superAdmin: user?.role === 'admin', courses, lessons, progress,
     go, load, act, perform, setToast, setModal, setEditor, setMobile, setBusy, openModal, ask,
     ...helpers,
     unread: data?.notifications?.filter((n) => !n.read).length ?? 0,

@@ -6,10 +6,12 @@ import type { Course } from '../../../lib/types';
 import { Button, ProgressBar, Stars } from '../ui';
 
 export function CourseCard({ course: c, learning = false }: { course: Course; learning?: boolean }) {
-  const { go, ls, pct, pfor } = useEdu();
+  const { go, ls, pct, pfor, data } = useEdu();
   const items = ls(c.id), count = items.length, pc = pct(c.id);
   const total = items.reduce((s, l) => s + l.duration, 0);
   const next = items.find((l) => !pfor(l.id).complete) || items[0];
+  const cert = (data?.certificates ?? []).find((x) => x.course_id === c.id);
+  const newAfterCert = cert ? items.filter((l) => !pfor(l.id).complete).length : 0;
   return (
     <article className="course-card">
       <button className="course-image" onClick={() => go(`/course/${c.id}`)} aria-label={c.title}>
@@ -30,8 +32,8 @@ export function CourseCard({ course: c, learning = false }: { course: Course; le
         </div>
         {learning ? (
           <>
-            <ProgressBar value={pc} label={pc === 100 ? <><CheckCircle2 size={13} /> 수료 완료</> : '학습 진도'} />
-            <Button small secondary onClick={() => go(next ? `/lesson/${next.id}` : `/course/${c.id}`)}>{pc === 100 ? '다시 학습하기' : pc ? '이어서 학습하기' : '학습 시작하기'}</Button>
+            <ProgressBar value={pc} label={cert ? <><CheckCircle2 size={13} /> 수료 완료{newAfterCert ? ` · 새 강의 ${newAfterCert}개` : ''}</> : '학습 진도'} />
+            <Button small secondary onClick={() => go(next ? `/lesson/${next.id}` : `/course/${c.id}`)}>{cert && !newAfterCert ? '다시 학습하기' : newAfterCert ? '새 강의 학습하기' : pc ? '이어서 학습하기' : '학습 시작하기'}</Button>
           </>
         ) : (
           <div className="course-foot">

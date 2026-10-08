@@ -9,7 +9,7 @@ export type SessionUser = {
   id: string;
   email: string;
   name: string;
-  role: 'student' | 'admin';
+  role: 'student' | 'admin' | 'manager';
   status: string;
   created: string;
   avatar: number;
@@ -65,9 +65,15 @@ export async function requireUser(req: Request) {
   if (!u) throw new HttpError(401, '로그인이 필요합니다.');
   return u;
 }
+export const isStaff = (role?: string | null) => role === 'admin' || role === 'manager';
+export async function requireStaff(req: Request) {
+  const u = await requireUser(req);
+  if (!isStaff(u.role)) throw new HttpError(403, '관리자 권한이 필요합니다.');
+  return u;
+}
 export async function requireAdmin(req: Request) {
   const u = await requireUser(req);
-  if (u.role !== 'admin') throw new HttpError(403, '관리자 권한이 필요합니다.');
+  if (u.role !== 'admin') throw new HttpError(403, '최고 관리자 권한이 필요합니다.');
   return u;
 }
 

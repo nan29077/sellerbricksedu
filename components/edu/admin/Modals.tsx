@@ -5,7 +5,7 @@ import { useEdu } from '../../../lib/edu-store';
 import { CATEGORIES, LEVELS, PLATFORMS, platformName, fmt } from '../../../lib/learning';
 import { Button, Modal, Pill } from '../ui';
 
-const TITLES: Record<string, string> = { course: '교육 과정 편집', lesson: '영상 강의와 확인 문제', reply: '질문 답변', cohort: '교육 기수 편집', channel: '나의 SNS 채널', progress: '학습 현황', announcement: '공지 작성', assignment: '과제 편집', review_submission: '과제 검토', import: '강의 일괄 등록', invite: '교육생 직접 등록', ai: 'AI로 확인 문제 생성' };
+const TITLES: Record<string, string> = { nudge: '교육생에게 알림 보내기', course: '교육 과정 편집', lesson: '영상 강의와 확인 문제', reply: '질문 답변', cohort: '교육 기수 편집', channel: '나의 SNS 채널', progress: '학습 현황', announcement: '공지 작성', assignment: '과제 편집', review_submission: '과제 검토', import: '강의 일괄 등록', invite: '교육생 직접 등록', ai: 'AI로 확인 문제 생성' };
 
 export function EduModals() {
   const { modal, setModal, editor, setEditor, perform, busy, courses, lessons, data, ls, pct, setBusy, load, setToast, act, openModal } = useEdu();
@@ -16,8 +16,8 @@ export function EduModals() {
   const wide = ['lesson', 'progress', 'import', 'announcement', 'assignment'].includes(modal.type);
   const title = modal.type === 'progress' ? `${modal.user?.name}님의 학습 현황` : TITLES[modal.type] || '설정';
 
-  const actionOf: Record<string, string> = { channel: 'channel', course: 'course', lesson: 'lesson', cohort: 'cohort', reply: 'reply', announcement: 'announcement', assignment: 'assignment', review_submission: 'review_submission', import: 'lessons_import', invite: 'invite' };
-  const successOf: Record<string, string> = { reply: '답변을 등록했습니다. 교육생에게 알림이 전달됩니다.', announcement: '공지를 저장했습니다.', review_submission: '검토 결과를 저장했습니다. 교육생에게 알림이 전달됩니다.', import: '강의를 일괄 등록했습니다.', invite: '교육생을 등록했습니다. 비밀번호 재설정 링크를 전달해 주세요.' };
+  const actionOf: Record<string, string> = { nudge: 'nudge', channel: 'channel', course: 'course', lesson: 'lesson', cohort: 'cohort', reply: 'reply', announcement: 'announcement', assignment: 'assignment', review_submission: 'review_submission', import: 'lessons_import', invite: 'invite' };
+  const successOf: Record<string, string> = { nudge: '알림을 보냈습니다.', reply: '답변을 등록했습니다. 교육생에게 알림이 전달됩니다.', announcement: '공지를 저장했습니다.', review_submission: '검토 결과를 저장했습니다. 교육생에게 알림이 전달됩니다.', import: '강의를 일괄 등록했습니다.', invite: '교육생을 등록했습니다. 비밀번호 재설정 링크를 전달해 주세요.' };
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -32,8 +32,26 @@ export function EduModals() {
   // ───────── 학습 현황 상세 ─────────
   if (modal.type === 'progress') {
     const ps = modal.progress || [];
+    const u = modal.user;
+    const myQ = (data?.messages ?? []).filter((m) => m.user_id === u?.id);
+    const mySub = (data?.submissions ?? []).filter((s) => s.user_id === u?.id);
+    const myCerts = (data?.allCertificates ?? []).filter((c) => c.user_id === u?.id);
     return (
       <Modal title={title} wide onClose={close}>
+        <div className="member-detail-top">
+          <div className="stats-grid compact">
+            <div className="stat-card"><p>완료 강의</p><b>{ps.filter((p: any) => p.complete).length} / {lessons.length}</b></div>
+            <div className="stat-card"><p>시청 시간</p><b>{Math.round(ps.reduce((s: number, p: any) => s + (p.watched || 0), 0) / 60)}분</b></div>
+            <div className="stat-card"><p>수료</p><b>{myCerts.length}건</b></div>
+            <div className="stat-card"><p>질문 · 과제</p><b>{myQ.length} · {mySub.length}</b></div>
+          </div>
+          <label>관리자 메모 <small className="muted">(교육생에게 보이지 않음)</small>
+            <textarea rows={2} value={editor.memo ?? ''} onChange={(e) => set('memo', e.target.value)} placeholder="상담 내용, 특이사항, 후속 조치 등" maxLength={2000} />
+          </label>
+          <div className="admin-actions"><Button small onClick={() => perform('memo', { userId: u.id, memo: editor.memo ?? '' }, '메모를 저장했습니다.')} disabled={busy}>메모 저장</Button><Button small secondary onClick={() => openModal('nudge', { ids: [u.id], title: '', body: '', link: '/learn', name: u.name })}>알림 보내기</Button></div>
+          {myCerts.length > 0 && <p className="small-muted">수료: {myCerts.map((c) => `${c.course_title} (${c.id})`).join(', ')}</p>}
+          {mySub.length > 0 && <p className="small-muted">과제: {mySub.map((s) => `${data?.assignments.find((a) => a.id === s.assignment_id)?.title || ''} · ${s.status === 'passed' ? '통과' : s.status === 'revise' ? '보완' : '검토 대기'}`).join(', ')}</p>}
+        </div>
         <div>
           {courses.map((c) => (
             <div key={c.id} className="progress-detail">
@@ -110,6 +128,15 @@ export function EduModals() {
           </>
         )}
 
+        {modal.type === 'nudge' && (
+          <>
+            <p className="muted">{editor.name ? `${editor.name}님에게` : `선택한 교육생 ${editor.ids?.length || 0}명에게`} 알림 센터로 메시지를 보냅니다. 학습 독려, 일정 안내, 개별 피드백에 활용하세요.</p>
+            <div className="quick-templates">{[['이번 주 학습 목표를 확인해 주세요', '이어서 학습하기에서 다음 강의를 시작해 보세요. 작은 진도가 큰 자신감이 됩니다.'], ['과제 제출 기한 안내', '이번 과정의 과제 마감이 다가오고 있어요. 과제 메뉴에서 제출해 주세요.'], ['새 강의가 추가되었어요', '나의 강의실에서 새로 추가된 강의를 확인해 보세요.']].map(([t, b]) => <button type="button" key={t} className="text-link" onClick={() => setEditor({ ...editor, title: t, body: b })}>{t}</button>)}</div>
+            <label>제목<input required value={editor.title} onChange={(e) => set('title', e.target.value)} maxLength={120} /></label>
+            <label>내용<textarea rows={4} value={editor.body} onChange={(e) => set('body', e.target.value)} maxLength={500} /></label>
+            <label>이동 링크<select value={editor.link} onChange={(e) => set('link', e.target.value)}><option value="/learn">학습 대시보드</option><option value="/learn/courses">나의 강의실</option><option value="/learn/assignments">과제</option><option value="/learn/notices">공지사항</option><option value="/learn/questions">학습 Q&A</option></select></label>
+          </>
+        )}
         {modal.type === 'reply' && <label>답변 내용<textarea required rows={7} value={editor.reply} onChange={(e) => set('reply', e.target.value)} placeholder="교육생에게 전달될 답변을 작성하세요. 저장하면 알림이 전송됩니다." /></label>}
 
         {modal.type === 'announcement' && (

@@ -5,8 +5,8 @@ import { notify, logActivity } from '../notify';
 import { encodePassword } from '../auth';
 import type { AuthedCtx } from './types';
 
-const CATEGORIES = ['입문', '방송 준비', '실전 판매', '운영·정산'];
-const LEVELS = ['입문', '초급', '중급'];
+import { CATEGORY_META, LEVELS } from '../../constants';
+const CATEGORIES = CATEGORY_META.map((c) => c.name);
 
 // ───────── 기수 ─────────
 export async function cohort({ body }: AuthedCtx) {
@@ -51,7 +51,7 @@ export async function member({ body, user }: AuthedCtx) {
     await logActivity(user.id, 'member_status', `${ids.length}명 → ${body.status}`);
   }
   if (body.role) {
-    if (!['student', 'admin'].includes(body.role)) throw new HttpError(400, '잘못된 역할입니다.');
+    if (!['student', 'admin', 'manager'].includes(body.role)) throw new HttpError(400, '잘못된 역할입니다.');
     await batch(ids.map((id) => stmt('UPDATE users SET role=? WHERE id=?', body.role, id)));
     await logActivity(user.id, 'member_role', `${ids.length}명 → ${body.role}`);
   }
@@ -90,6 +90,24 @@ export async function invite({ body, settings }: AuthedCtx) {
   ]);
   void settings;
   return out({ ok: true, userId: id });
+}
+
+/** 교육생별 관리자 메모 */
+export async function memo({ body }: AuthedCtx) {
+  const id = str(body.userId, 100);
+  if (!(await first('SELECT id FROM users WHERE id=?', id))) throw new HttpError(404, '교육생을 찾을 수 없습니다.');
+  await run('INSERT INTO user_profiles (user_id,avatar,memo) VALUES (?,?,?) ON CONFLICT(user_id) DO UPDATE SET memo=excluded.memo', id, crypto.getRandomValues(new Uint32Array(1))[0] % 30, str(body.memo, 2000));
+  return out({ ok: true });
+}
+/** 학습 독려·안내 알림을 선택 교육생에게 발송 */
+export async function nudge({ body, user }: AuthedCtx) {
+  const ids: string[] = (Array.isArray(body.ids) ? body.ids : [body.id]).filter(Boolean).map(String);
+  const title = str(body.title, 120), text = str(body.body, 500), link = str(body.link, 200) || '/learn';
+  if (!ids.length || !title) throw new HttpError(400, '대상과 제목을 입력해 주세요.');
+  if (!link.startsWith('/')) throw new HttpError(400, '링크는 / 로 시작하는 내부 경로여야 합니다.');
+  await notify(ids, 'system', title, text, link);
+  await logActivity(user.id, 'nudge', `${ids.length}명 · ${title}`);
+  return out({ ok: true, count: ids.length });
 }
 
 // ───────── 과정 ─────────

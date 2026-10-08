@@ -13,7 +13,7 @@ export async function notify(userIds: string[], type: NotificationType, title: s
 }
 
 export async function notifyAdmins(type: NotificationType, title: string, body = '', link = '') {
-  const admins = await all<{ id: string }>(`SELECT id FROM users WHERE role='admin' AND status='active'`);
+  const admins = await all<{ id: string }>(`SELECT id FROM users WHERE role IN ('admin','manager') AND status='active'`);
   await notify(admins.map((a) => a.id), type, title, body, link);
 }
 

@@ -6,7 +6,7 @@ import { fmtShort, relTime } from '../../../lib/learning';
 import { Button, Empty, PageHead, Pill, ProgressBar, Tabs } from '../ui';
 
 export function AdminCohorts() {
-  const { data, lessons, openModal, perform, ask, go } = useEdu();
+  const { data, lessons, openModal, perform, ask, go, superAdmin } = useEdu();
   if (!data) return null;
   const label: Record<string, string> = { recruiting: '모집 중', active: '교육 중', completed: '교육 종료' };
   return (
@@ -28,9 +28,9 @@ export function AdminCohorts() {
               <div className="member-metrics"><span>수료 {certs}건</span><span>공지 {data.announcements.filter((a) => a.cohort_id === c.id).length}개</span></div>
               <div className="admin-actions">
                 <Button small secondary onClick={() => openModal('cohort', c)}><PenLine size={14} /> 편집</Button>
-                <Button small secondary onClick={() => go('/admin/members')}>교육생</Button>
+                <Button small secondary onClick={() => go('/admin/members?cohort=' + c.id)}>교육생 {ids.length}명</Button>
                 <Button small secondary onClick={() => openModal('announcement', { title: '', body: '', cohortId: c.id, pinned: 0 })}><Megaphone size={14} /> 공지</Button>
-                <Button small secondary danger onClick={async () => { if (await ask(`'${c.name}' 기수를 삭제할까요?`, '소속 교육생은 미배정 상태가 됩니다.', { danger: true, confirmLabel: '삭제' })) perform('cohort_delete', { id: c.id }, '기수를 삭제했습니다.'); }}><Trash2 size={14} /></Button>
+                {superAdmin && <Button small secondary danger onClick={async () => { if (await ask(`'${c.name}' 기수를 삭제할까요?`, '소속 교육생은 미배정 상태가 됩니다.', { danger: true, confirmLabel: '삭제' })) perform('cohort_delete', { id: c.id }, '기수를 삭제했습니다.'); }}><Trash2 size={14} /></Button>}
               </div>
             </div>
           );

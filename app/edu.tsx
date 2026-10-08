@@ -15,12 +15,12 @@ import { SavedPage, AchievementsPage, CertificatesPage, QuestionsPage, NoticesPa
 import { CommunityPage } from '../components/edu/learn/Community';
 import { AdminDashboard } from '../components/edu/admin/Dashboard';
 import { AdminCourses, AdminLessons } from '../components/edu/admin/Courses';
-import { AdminMembers } from '../components/edu/admin/Members';
+import { AdminMembers, AdminActivity } from '../components/edu/admin/Members';
 import { AdminCohorts, AdminAnnouncements, AdminAssignments, AdminAi, AdminSettings } from '../components/edu/admin/Pages';
 import { EduModals } from '../components/edu/admin/Modals';
 
 function Router() {
-  const { path, data, error, load, user, admin, lessons, busy, perform, go } = useEdu();
+  const { path, data, error, load, user, admin, superAdmin, lessons, busy, perform, go } = useEdu();
   const seg = path.split('/').filter(Boolean);
 
   if (error && !data) return <div className="error-page"><Logo /><h2>교육 정보를 불러오지 못했어요.</h2><p>{error}</p><Button onClick={() => load()}>다시 시도</Button></div>;
@@ -63,13 +63,14 @@ function Router() {
     else if (p === '/admin') body = <AdminDashboard />;
     else if (p === '/admin/courses') body = <AdminCourses />;
     else if (p.startsWith('/admin/videos')) body = <AdminLessons />;
-    else if (p === '/admin/members') body = <AdminMembers />;
+    else if (p.startsWith('/admin/members')) body = <AdminMembers key={p} />;
+    else if (p === '/admin/activity') body = <AdminActivity />;
     else if (p === '/admin/progress') body = <AdminMembers report />;
     else if (p === '/admin/cohorts') body = <AdminCohorts />;
     else if (p === '/admin/announcements') body = <AdminAnnouncements />;
     else if (p === '/admin/assignments') body = <AdminAssignments />;
     else if (p === '/admin/ai') body = <AdminAi />;
-    else if (p === '/admin/settings') body = <AdminSettings />;
+    else if (p === '/admin/settings') body = superAdmin ? <AdminSettings /> : <Empty title="최고 관리자 전용 화면입니다" description="연동 설정은 최고 관리자만 변경할 수 있어요." />;
     else body = <Empty title="화면을 찾을 수 없어요" description="왼쪽 메뉴에서 필요한 기능을 선택해 주세요." />;
     return <PortalLayout>{body}</PortalLayout>;
   }

@@ -36,7 +36,7 @@ const HOSTS: Record<string, string[]> = {
   x: ['x.com', 'www.x.com', 'twitter.com', 'www.twitter.com'],
   naver: ['blog.naver.com', 'm.blog.naver.com', 'smartstore.naver.com', 'm.smartstore.naver.com'],
 };
-export const PLATFORMS = Object.keys(HOSTS);
+
 
 export async function channel({ body, user }: AuthedCtx) {
   let url: URL;

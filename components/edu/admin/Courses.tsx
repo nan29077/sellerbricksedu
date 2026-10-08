@@ -24,7 +24,7 @@ function useDragSort(ids: string[], onCommit: (ids: string[]) => void) {
 }
 
 export function AdminCourses() {
-  const { courses, ls, openModal, perform, ask, go } = useEdu();
+  const { courses, ls, openModal, perform, ask, go, superAdmin } = useEdu();
   const sorted = [...courses].sort((a, b) => a.position - b.position);
   const dnd = useDragSort(sorted.map((c) => c.id), (ids) => perform('reorder', { table: 'courses', ids }, '과정 순서를 저장했습니다.'));
   const blank = { title: '', description: '', category: '입문', level: '입문', image: 1, position: courses.length + 1, published: 0, objectives: '', instructor: '' };
@@ -45,7 +45,7 @@ export function AdminCourses() {
               <Button secondary small onClick={() => perform('course', { ...c, published: c.published ? 0 : 1 }, c.published ? '과정을 비공개로 전환했습니다.' : '과정을 공개했습니다.')}>{c.published ? <><EyeOff size={14} /> 비공개</> : <><Eye size={14} /> 공개</>}</Button>
               <Button secondary small onClick={() => go('/admin/videos?course=' + c.id)}><Video size={14} /> 강의</Button>
               <Button secondary small onClick={() => perform('course_duplicate', { id: c.id }, '과정을 복제했습니다. 비공개 상태로 추가되었어요.')} title="복제"><Copy size={14} /></Button>
-              <Button secondary small danger onClick={async () => { if (await ask(`'${c.title}' 과정을 삭제할까요?`, `강의 ${ls(c.id).length}개와 교육생 진도, 후기, 과제가 함께 삭제되며 복구할 수 없습니다.`, { danger: true, confirmLabel: '삭제' })) perform('course_delete', { id: c.id }, '과정을 삭제했습니다.'); }} title="삭제"><Trash2 size={14} /></Button>
+              {superAdmin && <Button secondary small danger onClick={async () => { if (await ask(`'${c.title}' 과정을 삭제할까요?`, `강의 ${ls(c.id).length}개와 교육생 진도, 후기, 과제가 함께 삭제되며 복구할 수 없습니다.`, { danger: true, confirmLabel: '삭제' })) perform('course_delete', { id: c.id }, '과정을 삭제했습니다.'); }} title="삭제"><Trash2 size={14} /></Button>}
               <span className="order-buttons"><button onClick={() => dnd.move(c.id, -1)} aria-label="위로" disabled={i === 0}><ArrowUp size={14} /></button><button onClick={() => dnd.move(c.id, 1)} aria-label="아래로" disabled={i === dnd.list.length - 1}><ArrowDown size={14} /></button></span>
             </div>
           </div>
@@ -85,7 +85,7 @@ export function AdminLessons() {
 }
 
 function CourseLessonList({ courseId, search, onlyMissing }: { courseId: string; search: string; onlyMissing: boolean }) {
-  const { courses, ls, openModal, perform, ask, data } = useEdu();
+  const { courses, ls, openModal, perform, ask, data, superAdmin } = useEdu();
   const c = courses.find((x) => x.id === courseId)!;
   const items = ls(courseId);
   const dnd = useDragSort(items.map((l) => l.id), (ids) => perform('reorder', { table: 'lessons', ids }, '강의 순서를 저장했습니다.'));
@@ -107,7 +107,7 @@ function CourseLessonList({ courseId, search, onlyMissing }: { courseId: string;
           <div className="admin-actions">
             <Button secondary small onClick={() => openModal('lesson', withAnswers(l))}><PenLine size={14} /> 편집</Button>
             <Button secondary small onClick={() => openModal('ai', { topic: `${c.title} - ${l.title}: ${l.summary}`, mode: 'quiz', lesson: withAnswers(l) })} title="AI로 확인 문제 생성"><Sparkles size={14} /></Button>
-            <Button secondary small danger onClick={async () => { if (await ask(`'${l.title}' 강의를 삭제할까요?`, '교육생의 진도와 노트가 함께 삭제됩니다.', { danger: true, confirmLabel: '삭제' })) perform('lesson_delete', { id: l.id }, '강의를 삭제했습니다.'); }} title="삭제"><Trash2 size={14} /></Button>
+            {superAdmin && <Button secondary small danger onClick={async () => { if (await ask(`'${l.title}' 강의를 삭제할까요?`, '교육생의 진도와 노트가 함께 삭제됩니다.', { danger: true, confirmLabel: '삭제' })) perform('lesson_delete', { id: l.id }, '강의를 삭제했습니다.'); }} title="삭제"><Trash2 size={14} /></Button>}
             <span className="order-buttons"><button onClick={() => dnd.move(l.id, -1)} aria-label="위로" disabled={i === 0}><ArrowUp size={14} /></button><button onClick={() => dnd.move(l.id, 1)} aria-label="아래로" disabled={i === shown.length - 1}><ArrowDown size={14} /></button></span>
           </div>
         </div>

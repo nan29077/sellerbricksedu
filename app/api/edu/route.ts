@@ -1,6 +1,6 @@
 import { seed, bucket, run, first, HttpError } from '../../../lib/server/db';
 import { out, sameOrigin } from '../../../lib/server/http';
-import { current } from '../../../lib/server/auth';
+import { current, isStaff } from '../../../lib/server/auth';
 import { getSettings } from '../../../lib/server/settings';
 import { buildPayload } from '../../../lib/server/payload';
 import type { Ctx, Handler } from '../../../lib/server/handlers/types';
@@ -13,7 +13,7 @@ import { ai } from '../../../lib/server/handlers/ai';
 export const dynamic = 'force-dynamic';
 
 /** 액션 → (권한, 핸들러). 'public' | 'user' | 'admin' */
-const ACTIONS: Record<string, ['public' | 'user' | 'admin', Handler]> = {
+const ACTIONS: Record<string, ['public' | 'user' | 'staff' | 'admin', Handler]> = {
   demo: ['public', auth.demo as Handler],
   register: ['public', auth.register as Handler],
   login: ['public', auth.login as Handler],
@@ -40,29 +40,33 @@ const ACTIONS: Record<string, ['public' | 'user' | 'admin', Handler]> = {
   channel_remove: ['user', community.channelRemove as Handler],
   visit: ['user', community.visit as Handler],
 
-  cohort: ['admin', admin.cohort as Handler],
+  // 운영 관리자(manager)와 최고 관리자(admin) 공통
+  cohort: ['staff', admin.cohort as Handler],
+  assign_cohort: ['staff', admin.assignCohort as Handler],
+  member: ['staff', admin.member as Handler],
+  memo: ['staff', admin.memo as Handler],
+  nudge: ['staff', admin.nudge as Handler],
+  invite: ['staff', admin.invite as Handler],
+  course: ['staff', admin.course as Handler],
+  course_duplicate: ['staff', admin.courseDuplicate as Handler],
+  reorder: ['staff', admin.reorder as Handler],
+  lesson: ['staff', admin.lesson as Handler],
+  lessons_import: ['staff', admin.lessonsImport as Handler],
+  reply: ['staff', admin.reply as Handler],
+  question_update: ['staff', admin.questionUpdate as Handler],
+  announcement: ['staff', admin.announcement as Handler],
+  announcement_delete: ['staff', admin.announcementDelete as Handler],
+  assignment: ['staff', admin.assignment as Handler],
+  assignment_delete: ['staff', admin.assignmentDelete as Handler],
+  review_submission: ['staff', admin.reviewSubmission as Handler],
+  ai: ['staff', ai as Handler],
+  // 최고 관리자 전용 (삭제·권한·설정)
   cohort_delete: ['admin', admin.cohortDelete as Handler],
-  assign_cohort: ['admin', admin.assignCohort as Handler],
-  member: ['admin', admin.member as Handler],
   member_delete: ['admin', admin.memberDelete as Handler],
   reset_link: ['admin', admin.resetLink as Handler],
-  invite: ['admin', admin.invite as Handler],
-  course: ['admin', admin.course as Handler],
   course_delete: ['admin', admin.courseDelete as Handler],
-  course_duplicate: ['admin', admin.courseDuplicate as Handler],
-  reorder: ['admin', admin.reorder as Handler],
-  lesson: ['admin', admin.lesson as Handler],
   lesson_delete: ['admin', admin.lessonDelete as Handler],
-  lessons_import: ['admin', admin.lessonsImport as Handler],
-  reply: ['admin', admin.reply as Handler],
-  question_update: ['admin', admin.questionUpdate as Handler],
-  announcement: ['admin', admin.announcement as Handler],
-  announcement_delete: ['admin', admin.announcementDelete as Handler],
-  assignment: ['admin', admin.assignment as Handler],
-  assignment_delete: ['admin', admin.assignmentDelete as Handler],
-  review_submission: ['admin', admin.reviewSubmission as Handler],
   settings: ['admin', admin.settings as Handler],
-  ai: ['admin', ai as Handler],
 };
 
 export async function GET(req: Request) {
@@ -91,7 +95,7 @@ export async function POST(req: Request) {
     // 영상 업로드 (multipart)
     if (req.headers.get('content-type')?.includes('multipart/form-data')) {
       const u = await current(req);
-      if (u?.role !== 'admin') return out({ error: '관리자 권한이 필요합니다.' }, 403);
+      if (!isStaff(u?.role)) return out({ error: '관리자 권한이 필요합니다.' }, 403);
       const f = await req.formData();
       const file = f.get('file') as File | null, id = String(f.get('lessonId') || '');
       const maxMb = Number(settings.max_video_mb) || 50;
@@ -109,9 +113,12 @@ export async function POST(req: Request) {
     const entry = ACTIONS[String(body.action)];
     if (!entry) return out({ error: '지원하지 않는 작업입니다.' }, 400);
     const [scope, handler] = entry;
-    const user = scope === 'public' ? await current(req) : await current(req);
+    const user = await current(req);
     if (scope !== 'public' && !user) return out({ error: '로그인이 필요합니다.' }, 401);
-    if (scope === 'admin' && user?.role !== 'admin') return out({ error: '관리자 권한이 필요합니다.' }, 403);
+    if (scope === 'staff' && !isStaff(user?.role)) return out({ error: '관리자 권한이 필요합니다.' }, 403);
+    if (scope === 'admin' && user?.role !== 'admin') return out({ error: '최고 관리자 권한이 필요합니다.' }, 403);
+    // 운영 관리자는 역할 변경 불가
+    if (user?.role === 'manager' && body.action === 'member' && body.role) return out({ error: '역할 변경은 최고 관리자만 할 수 있습니다.' }, 403);
     const ctx: Ctx = { req, body, user, settings };
     return await handler(ctx);
   } catch (e) {

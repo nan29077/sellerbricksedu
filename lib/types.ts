@@ -1,4 +1,4 @@
-export type Role = 'student' | 'admin';
+export type Role = 'student' | 'admin' | 'manager';
 
 export interface User {
   id: string;
@@ -80,7 +80,7 @@ export interface Assignment { id: string; course_id: string; lesson_id: string |
 export interface Submission { id: string; assignment_id: string; user_id: string; body: string; link: string; status: 'submitted' | 'passed' | 'revise'; feedback: string; score: number | null; created: string; reviewed: string; name?: string; email?: string }
 
 export interface AdminUser {
-  id: string; name: string; email: string; role: Role; status: string; created: string; avatar: number; cohort_id: string | null; has_password: number; last_active: string | null; completed: number; watched: number;
+  id: string; name: string; email: string; role: Role; status: string; created: string; avatar: number; memo: string; cohort_id: string | null; has_password: number; last_active: string | null; completed: number; watched: number;
 }
 export interface DailyStat { day: string; learners: number; seconds: number; completed: number }
 export interface Activity { id: string; user_id: string; kind: string; detail: string; created: string; name: string }
@@ -116,4 +116,5 @@ export interface Payload {
   allCertificates?: Certificate[];
   hasAiKey?: boolean;
   adminSettings?: Record<string, string>;
+  superAdmin?: boolean;
 }

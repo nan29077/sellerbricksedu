@@ -46,8 +46,22 @@ export async function batch(statements: D1PreparedStatement[]) {
  * 런타임 스키마 보정 — drizzle 마이그레이션이 적용되지 않은 환경(운영 D1 등)에서도
  * 새 기능이 동작하도록 테이블/컬럼을 멱등하게 추가한다. settings.schema_version 으로 1회만 수행.
  */
-const SCHEMA_VERSION = '3';
+const SCHEMA_VERSION = '4';
 const CREATE_TABLES = [
+  // 기본 테이블 (0000/0001 마이그레이션과 동일, 빈 DB에서도 동작하도록)
+  `CREATE TABLE IF NOT EXISTS users (id text PRIMARY KEY NOT NULL, email text NOT NULL, name text NOT NULL, role text NOT NULL, password text, status text DEFAULT 'active' NOT NULL, created text NOT NULL)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS users_email_unique ON users (email)`,
+  `CREATE TABLE IF NOT EXISTS sessions (id text PRIMARY KEY NOT NULL, user_id text NOT NULL, expires integer NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS user_profiles (user_id text PRIMARY KEY NOT NULL, avatar integer NOT NULL, name_changes integer DEFAULT 0 NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS courses (id text PRIMARY KEY NOT NULL, title text NOT NULL, description text NOT NULL, category text NOT NULL, image integer NOT NULL, position integer NOT NULL, published integer DEFAULT 1 NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS lessons (id text PRIMARY KEY NOT NULL, course_id text NOT NULL, title text NOT NULL, summary text NOT NULL, duration integer NOT NULL, position integer NOT NULL, video text DEFAULT '' NOT NULL, questions text NOT NULL, resource text DEFAULT '' NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS progress (user_id text NOT NULL, lesson_id text NOT NULL, position real DEFAULT 0 NOT NULL, watched real DEFAULT 0 NOT NULL, complete integer DEFAULT 0 NOT NULL, score integer, bookmark integer DEFAULT 0 NOT NULL, note text DEFAULT '' NOT NULL, updated text NOT NULL, PRIMARY KEY(user_id, lesson_id))`,
+  `CREATE TABLE IF NOT EXISTS settings (id text PRIMARY KEY NOT NULL, value text NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS messages (id text PRIMARY KEY NOT NULL, user_id text NOT NULL, lesson_id text, body text NOT NULL, reply text DEFAULT '' NOT NULL, created text NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS cohorts (id text PRIMARY KEY NOT NULL, name text NOT NULL, starts text DEFAULT '' NOT NULL, ends text DEFAULT '' NOT NULL, description text DEFAULT '' NOT NULL, status text DEFAULT 'recruiting' NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS memberships (user_id text PRIMARY KEY NOT NULL, cohort_id text NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS channels (user_id text NOT NULL, platform text NOT NULL, url text NOT NULL, bio text DEFAULT '' NOT NULL, shared integer DEFAULT 1 NOT NULL, created text NOT NULL, PRIMARY KEY(user_id, platform))`,
+  `CREATE TABLE IF NOT EXISTS channel_visits (user_id text NOT NULL, target_id text NOT NULL, platform text NOT NULL, created text NOT NULL, PRIMARY KEY(user_id, target_id, platform))`,
   `CREATE TABLE IF NOT EXISTS activity_log (id text PRIMARY KEY NOT NULL, user_id text NOT NULL, kind text NOT NULL, detail text DEFAULT '' NOT NULL, created text NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS announcements (id text PRIMARY KEY NOT NULL, title text NOT NULL, body text NOT NULL, cohort_id text, pinned integer DEFAULT 0 NOT NULL, author_id text NOT NULL, created text NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS assignments (id text PRIMARY KEY NOT NULL, course_id text NOT NULL, lesson_id text, title text NOT NULL, description text DEFAULT '' NOT NULL, due text DEFAULT '' NOT NULL, position integer DEFAULT 1 NOT NULL, published integer DEFAULT 1 NOT NULL, created text NOT NULL)`,
@@ -83,6 +97,7 @@ const ADD_COLUMNS: [string, string, string][] = [
   ['progress', 'completed_at', `text DEFAULT '' NOT NULL`],
   ['user_profiles', 'weekly_goal', `integer DEFAULT 3 NOT NULL`],
   ['user_profiles', 'bio', `text DEFAULT '' NOT NULL`],
+  ['user_profiles', 'memo', `text DEFAULT '' NOT NULL`],
 ];
 
 let migrated = false;

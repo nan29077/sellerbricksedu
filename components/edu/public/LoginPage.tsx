@@ -41,7 +41,7 @@ export function LoginPage({ redirectTo }: { redirectTo?: string }) {
       if (mode === 'register') {
         setMessage(j.message);
         if (j.message?.includes('바로 로그인')) setMode('login');
-      } else go(j.user?.role === 'admin' && returnTo === '/learn' ? '/admin' : returnTo);
+      } else go((j.user?.role === 'admin' || j.user?.role === 'manager') && returnTo === '/learn' ? '/admin' : returnTo);
     } catch (err: any) {
       setMessage(err.message);
     }

@@ -12,7 +12,8 @@ const parseJson = (s: string, fallback: any) => {
 
 /** 클라이언트가 한 번에 받는 전체 상태. 역할별로 노출 범위를 다르게 한다. */
 export async function buildPayload(user: SessionUser | null) {
-  const admin = user?.role === 'admin';
+  const admin = user?.role === 'admin' || user?.role === 'manager';
+  const superAdmin = user?.role === 'admin';
   const settingsMap = await getSettings();
   const settings = publicSettings(settingsMap);
   const oauth = {
@@ -98,7 +99,7 @@ export async function buildPayload(user: SessionUser | null) {
   if (admin) {
     const [users, allProgress, questions, activity, daily, resets, oauthAccounts, allCertificates] = await Promise.all([
       all(
-        `SELECT users.id,users.name,users.email,users.role,users.status,users.created, COALESCE(user_profiles.avatar,0) AS avatar, memberships.cohort_id,
+        `SELECT users.id,users.name,users.email,users.role,users.status,users.created, COALESCE(user_profiles.avatar,0) AS avatar, COALESCE(user_profiles.memo,'') AS memo, memberships.cohort_id,
          CASE WHEN users.password IS NULL THEN 0 ELSE 1 END AS has_password,
          (SELECT MAX(created) FROM activity_log WHERE user_id=users.id) AS last_active,
          (SELECT COUNT(*) FROM progress WHERE user_id=users.id AND complete=1) AS completed,
@@ -114,6 +115,8 @@ export async function buildPayload(user: SessionUser | null) {
       all('SELECT certificates.*, users.name, courses.title AS course_title FROM certificates JOIN users ON users.id=certificates.user_id JOIN courses ON courses.id=certificates.course_id ORDER BY issued DESC LIMIT 200'),
     ]);
     const hasAiKey = !!(await first(`SELECT id FROM settings WHERE id='ai_key'`));
+    // 수료 후 강의가 추가된 과정: 교육생에게 '추가 강의' 안내용
+
     Object.assign(result, {
       users,
       allProgress,
@@ -124,7 +127,8 @@ export async function buildPayload(user: SessionUser | null) {
       oauthAccounts,
       allCertificates,
       hasAiKey,
-      adminSettings: settings,
+      adminSettings: superAdmin ? settings : undefined,
+      superAdmin,
     });
   }
   return result;
