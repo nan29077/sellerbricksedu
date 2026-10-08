@@ -53,9 +53,9 @@ export default defineConfig(async ({ command }) => {
 
   return {
     server: {
-      ...(managedLinux
-        ? { host: "0.0.0.0", allowedHosts: ["terminal.local"] }
-        : {}),
+      // Cloudflare quick tunnels use a new subdomain for each preview session.
+      allowedHosts: managedLinux ? ["terminal.local"] : [".trycloudflare.com"],
+      ...(managedLinux ? { host: "0.0.0.0" } : {}),
       ...(isCodexSeatbeltSandbox
         ? { watch: { useFsEvents: false, usePolling: true } }
         : {}),
