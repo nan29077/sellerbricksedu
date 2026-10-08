@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import "./refinement.css";
 import "./introduction.css";
+import "./features.css";
 
 export const metadata: Metadata = {
   title: "셀러브릭스 에듀 | 라이브 커머스 셀러 아카데미",

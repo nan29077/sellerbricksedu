@@ -1,0 +1,133 @@
+import { env } from 'cloudflare:workers';
+import { flattenCurriculum, CURRICULUM_VERSION } from '../curriculum';
+
+export class HttpError extends Error {
+  status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
+}
+
+export function database(): D1Database {
+  const db = (env as any).DB as D1Database | undefined;
+  if (!db) throw new HttpError(503, '교육 데이터를 불러올 수 없습니다. 잠시 후 다시 시도해 주세요.');
+  return db;
+}
+
+export const bucket = (): R2Bucket | undefined => (env as any).BUCKET as R2Bucket | undefined;
+
+export const now = () => new Date().toISOString();
+export const uid = () => crypto.randomUUID();
+
+/** KST 기준 YYYY-MM-DD */
+export function kstDay(date = new Date()) {
+  return new Date(date.getTime() + 9 * 3600 * 1000).toISOString().slice(0, 10);
+}
+
+export async function all<T = any>(sql: string, ...params: unknown[]): Promise<T[]> {
+  const r = await database().prepare(sql).bind(...params).all();
+  return r.results as T[];
+}
+export async function first<T = any>(sql: string, ...params: unknown[]): Promise<T | null> {
+  return (await database().prepare(sql).bind(...params).first()) as T | null;
+}
+export async function run(sql: string, ...params: unknown[]) {
+  return database().prepare(sql).bind(...params).run();
+}
+export function stmt(sql: string, ...params: unknown[]) {
+  return database().prepare(sql).bind(...params);
+}
+export async function batch(statements: D1PreparedStatement[]) {
+  if (statements.length) await database().batch(statements);
+}
+
+/**
+ * 런타임 스키마 보정 — drizzle 마이그레이션이 적용되지 않은 환경(운영 D1 등)에서도
+ * 새 기능이 동작하도록 테이블/컬럼을 멱등하게 추가한다. settings.schema_version 으로 1회만 수행.
+ */
+const SCHEMA_VERSION = '3';
+const CREATE_TABLES = [
+  `CREATE TABLE IF NOT EXISTS activity_log (id text PRIMARY KEY NOT NULL, user_id text NOT NULL, kind text NOT NULL, detail text DEFAULT '' NOT NULL, created text NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS announcements (id text PRIMARY KEY NOT NULL, title text NOT NULL, body text NOT NULL, cohort_id text, pinned integer DEFAULT 0 NOT NULL, author_id text NOT NULL, created text NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS assignments (id text PRIMARY KEY NOT NULL, course_id text NOT NULL, lesson_id text, title text NOT NULL, description text DEFAULT '' NOT NULL, due text DEFAULT '' NOT NULL, position integer DEFAULT 1 NOT NULL, published integer DEFAULT 1 NOT NULL, created text NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS certificates (id text PRIMARY KEY NOT NULL, user_id text NOT NULL, course_id text NOT NULL, issued text NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS learning_days (user_id text NOT NULL, day text NOT NULL, seconds real DEFAULT 0 NOT NULL, completed integer DEFAULT 0 NOT NULL, PRIMARY KEY(user_id, day))`,
+  `CREATE TABLE IF NOT EXISTS lesson_notes (id text PRIMARY KEY NOT NULL, user_id text NOT NULL, lesson_id text NOT NULL, at real DEFAULT 0 NOT NULL, body text NOT NULL, created text NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS login_attempts (key text PRIMARY KEY NOT NULL, count integer DEFAULT 0 NOT NULL, first integer NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS notifications (id text PRIMARY KEY NOT NULL, user_id text NOT NULL, type text NOT NULL, title text NOT NULL, body text DEFAULT '' NOT NULL, link text DEFAULT '' NOT NULL, read integer DEFAULT 0 NOT NULL, created text NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS oauth_accounts (provider text NOT NULL, provider_id text NOT NULL, user_id text NOT NULL, created text NOT NULL, PRIMARY KEY(provider, provider_id))`,
+  `CREATE TABLE IF NOT EXISTS password_resets (token text PRIMARY KEY NOT NULL, user_id text NOT NULL, expires integer NOT NULL, created text NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS question_votes (message_id text NOT NULL, user_id text NOT NULL, PRIMARY KEY(message_id, user_id))`,
+  `CREATE TABLE IF NOT EXISTS reviews (user_id text NOT NULL, course_id text NOT NULL, rating integer NOT NULL, body text DEFAULT '' NOT NULL, created text NOT NULL, PRIMARY KEY(user_id, course_id))`,
+  `CREATE TABLE IF NOT EXISTS submissions (id text PRIMARY KEY NOT NULL, assignment_id text NOT NULL, user_id text NOT NULL, body text DEFAULT '' NOT NULL, link text DEFAULT '' NOT NULL, status text DEFAULT 'submitted' NOT NULL, feedback text DEFAULT '' NOT NULL, score integer, created text NOT NULL, reviewed text DEFAULT '' NOT NULL)`,
+  `CREATE INDEX IF NOT EXISTS idx_progress_user ON progress(user_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, read)`,
+  `CREATE INDEX IF NOT EXISTS idx_messages_lesson ON messages(lesson_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id)`,
+];
+const ADD_COLUMNS: [string, string, string][] = [
+  ['courses', 'level', `text DEFAULT '입문' NOT NULL`],
+  ['courses', 'objectives', `text DEFAULT '' NOT NULL`],
+  ['courses', 'instructor', `text DEFAULT '' NOT NULL`],
+  ['lessons', 'section', `text DEFAULT '' NOT NULL`],
+  ['lessons', 'chapters', `text DEFAULT '[]' NOT NULL`],
+  ['lessons', 'objectives', `text DEFAULT '' NOT NULL`],
+  ['lessons', 'transcript', `text DEFAULT '' NOT NULL`],
+  ['lessons', 'preview', `integer DEFAULT 0 NOT NULL`],
+  ['messages', 'public', `integer DEFAULT 1 NOT NULL`],
+  ['messages', 'resolved', `integer DEFAULT 0 NOT NULL`],
+  ['messages', 'pinned', `integer DEFAULT 0 NOT NULL`],
+  ['progress', 'attempts', `integer DEFAULT 0 NOT NULL`],
+  ['progress', 'best_score', `integer`],
+  ['progress', 'completed_at', `text DEFAULT '' NOT NULL`],
+  ['user_profiles', 'weekly_goal', `integer DEFAULT 3 NOT NULL`],
+  ['user_profiles', 'bio', `text DEFAULT '' NOT NULL`],
+];
+
+let migrated = false;
+export async function migrate() {
+  if (migrated) return;
+  const db = database();
+  const v = await first<{ value: string }>(`SELECT value FROM settings WHERE id='schema_version'`).catch(() => null);
+  if (v?.value === SCHEMA_VERSION) {
+    migrated = true;
+    return;
+  }
+  for (const sql of CREATE_TABLES) await db.prepare(sql).run();
+  for (const [table, column, def] of ADD_COLUMNS) {
+    const cols = await all<{ name: string }>(`PRAGMA table_info(${table})`);
+    if (!cols.some((c) => c.name === column)) {
+      try {
+        await db.prepare(`ALTER TABLE ${table} ADD ${column} ${def}`).run();
+      } catch (e) {
+        console.warn('column add skipped', table, column, e);
+      }
+    }
+  }
+  await run(`INSERT INTO settings (id,value) VALUES ('schema_version',?) ON CONFLICT(id) DO UPDATE SET value=excluded.value`, SCHEMA_VERSION);
+  migrated = true;
+}
+
+export async function seed() {
+  await migrate();
+  const db = database();
+  await run(`INSERT OR IGNORE INTO cohorts (id,name,starts,ends,description,status) VALUES ('cohort-1','1기','','','라이브 커머스를 처음 시작하는 셀러의 입문 교육','recruiting')`);
+  const cur = await first<{ value: string }>(`SELECT value FROM settings WHERE id='curriculum_version'`);
+  if (cur?.value === CURRICULUM_VERSION) return;
+  const { courses, lessons } = flattenCurriculum();
+  // 새 항목은 추가, 기존 항목은 비어 있는 필드만 채운다(관리자 편집 보존)
+  await batch(courses.map((c) => db.prepare('INSERT OR IGNORE INTO courses (id,title,description,category,image,position,published,level,objectives,instructor) VALUES (?,?,?,?,?,?,1,?,?,?)').bind(c.id, c.title, c.description, c.category, c.image, c.position, c.level, c.objectives, c.instructor)));
+  await batch(courses.map((c) => db.prepare(`UPDATE courses SET objectives=CASE WHEN objectives='' THEN ? ELSE objectives END, instructor=CASE WHEN instructor='' THEN ? ELSE instructor END, level=CASE WHEN level='' THEN ? ELSE level END WHERE id=?`).bind(c.objectives, c.instructor, c.level, c.id)));
+  for (let i = 0; i < lessons.length; i += 40) {
+    await batch(lessons.slice(i, i + 40).map((l) => db.prepare('INSERT OR IGNORE INTO lessons (id,course_id,title,summary,duration,position,video,questions,resource,section,chapters,objectives,preview) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(l.id, l.course_id, l.title, l.summary, l.duration, l.position, l.video, l.questions, l.resource, l.section, l.chapters, l.objectives, l.preview)));
+  }
+  // v1 시드 강의(기본 문구·기본 퀴즈)만 v2 콘텐츠로 교체 — 관리자가 수정한 강의는 유지
+  const legacySummary = '의 핵심 개념을 이해하고 실제 방송에 적용합니다. 학습 후 체크리스트를 작성하고 확인 문제로 배운 내용을 정리하세요.';
+  for (let i = 0; i < lessons.length; i += 40) {
+    await batch(lessons.slice(i, i + 40).map((l) => db.prepare(`UPDATE lessons SET title=?,summary=?,duration=?,questions=?,resource=?,section=?,chapters=?,objectives=?,preview=? WHERE id=? AND instr(summary, ?)>0`).bind(l.title, l.summary, l.duration, l.questions, l.resource, l.section, l.chapters, l.objectives, l.preview, l.id, legacySummary)));
+    await batch(lessons.slice(i, i + 40).map((l) => db.prepare(`UPDATE lessons SET section=CASE WHEN section='' THEN ? ELSE section END, chapters=CASE WHEN chapters IN ('','[]') THEN ? ELSE chapters END, objectives=CASE WHEN objectives='' THEN ? ELSE objectives END WHERE id=?`).bind(l.section, l.chapters, l.objectives, l.id)));
+  }
+  await run(`INSERT INTO settings (id,value) VALUES ('curriculum_version',?) ON CONFLICT(id) DO UPDATE SET value=excluded.value`, CURRICULUM_VERSION);
+  await run(`INSERT OR IGNORE INTO settings (id,value) VALUES ('seed_complete','1')`);
+}
