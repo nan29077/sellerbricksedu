@@ -16,7 +16,16 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup-windows.ps1
 
 Node.js 24 LTS, Corepack과 인터넷 연결이 필요합니다. 기존 링고 개발 환경과 같은 pnpm 11.25.0을 사용합니다. `node_modules`는 PC에서 새로 설치합니다.
 
-## 개발 실행
+## 개발 실행 (가장 쉬운 방법)
+폴더 안의 **`시작.bat`** 을 더블클릭하세요. 패키지 설치(최초 1회)와 서버 실행, 브라우저 열기까지 자동입니다.
+
+| 배치 파일 | 하는 일 |
+| --- | --- |
+| `시작.bat` | 개발 서버 실행 (코드 수정 즉시 반영) — 평소 미리보기용 |
+| `빌드-미리보기.bat` | 운영과 동일하게 빌드 후 실행 — 배포 전 최종 확인용 |
+| `점검.bat` | 서버가 떠 있는 상태에서 API 자동 점검 실행 |
+
+직접 명령으로 실행하려면:
 ```powershell
 Set-Location 'E:\프로젝트\셀러브릭스 에듀'
 corepack pnpm dev
