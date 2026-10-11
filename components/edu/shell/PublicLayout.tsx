@@ -69,3 +69,13 @@ export function PublicLayout({ children, className = '' }: { children: ReactNode
     </div>
   );
 }
+
+/** 로그인·비밀번호 재설정 화면: 상단 헤더 없이 본문만 (카드 안 로고로 홈 이동) */
+export function AuthLayout({ children }: { children: ReactNode }) {
+  return (
+    <div className="auth-layout">
+      {children}
+      <Footer />
+    </div>
+  );
+}

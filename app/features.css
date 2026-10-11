@@ -434,3 +434,13 @@ button:focus:not(:focus-visible), input:focus:not(:focus-visible) { outline: non
 .search-results li button:focus-visible { background: var(--light); }
 .member-card, .post-card, .event-card, .path-card { transition: transform .15s, box-shadow .2s; }
 .post-card:hover, .event-card:hover { box-shadow: 0 10px 24px #1d1a3a0f; }
+
+/* 로그인·재설정 화면: 상단 헤더 없음 + 카드 로고 클릭으로 홈 이동 */
+.brand-link { background: none; border: 0; padding: 0; margin: 0; font: inherit; color: inherit; cursor: pointer; }
+.brand-link:hover { opacity: .78; }
+.brand-link:focus-visible { outline: 2px solid var(--primary, #4f46e5); outline-offset: 4px; border-radius: 6px; }
+.auth-layout { display: flex; flex-direction: column; min-height: 100vh; }
+.auth-layout > .login-wrap { flex: 1 0 auto; margin-top: 56px; }
+@media (max-width: 760px) {
+  .auth-layout > .login-wrap { margin-top: 32px; }
+}

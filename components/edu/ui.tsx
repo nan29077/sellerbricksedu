@@ -4,13 +4,15 @@ import { Component, useEffect, useRef, useState, type ReactNode, type CSSPropert
 import { useEdu } from '../../lib/edu-store';
 export { CharacterAvatar } from '../../app/account-settings';
 
-export function Logo() {
-  return (
-    <span className="brand">
+export function Logo({ onClick }: { onClick?: () => void } = {}) {
+  const inner = (
+    <>
       <img src="/brand/sellerbricks-light.svg" width="192" height="41" alt="셀러브릭스" />
       <span className="brand-edu-label">EDU</span>
-    </span>
+    </>
   );
+  if (onClick) return <button type="button" className="brand brand-link" onClick={onClick} aria-label="셀러브릭스 에듀 홈으로">{inner}</button>;
+  return <span className="brand">{inner}</span>;
 }
 
 export function Button({ children, onClick, secondary = false, small = false, disabled = false, danger = false, type = 'button', className = '', title }: {

@@ -62,7 +62,7 @@ export function LoginPage({ redirectTo }: { redirectTo?: string }) {
         <div className="login-note"><ShieldCheck size={21} /><span>셀러브릭스 셀러를 위한 체계적인 교육</span></div>
       </div>
       <div className="login-form">
-        <Logo />
+        <Logo onClick={() => go('/')} />
         {mode === 'forgot' ? (
           <>
             <button className="text-link back-link" onClick={() => { setMode('login'); setMessage(''); }}><ArrowLeft size={15} /> 로그인으로</button>
@@ -124,7 +124,7 @@ export function ResetPage({ token }: { token: string }) {
   return (
     <div className="login-wrap single">
       <div className="login-form">
-        <Logo />
+        <Logo onClick={() => go('/')} />
         <h2>새 비밀번호 설정</h2>
         <p>10자 이상의 새 비밀번호를 입력해 주세요. 변경하면 모든 기기에서 다시 로그인해야 합니다.</p>
         <form onSubmit={async (e) => {

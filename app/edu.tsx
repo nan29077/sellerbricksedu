@@ -3,7 +3,7 @@ import { EduProvider, useEdu } from '../lib/edu-store';
 import MainIntroduction from './main-introduction';
 import AccountSettings from './account-settings';
 import { Button, Empty, ErrorBoundary, Logo, PageHead, Toast } from '../components/edu/ui';
-import { PublicLayout } from '../components/edu/shell/PublicLayout';
+import { PublicLayout, AuthLayout } from '../components/edu/shell/PublicLayout';
 import { PortalLayout } from '../components/edu/shell/PortalLayout';
 import { LoginPage, ResetPage } from '../components/edu/public/LoginPage';
 import { CatalogPage } from '../components/edu/public/CatalogPage';
@@ -30,7 +30,7 @@ function Router() {
   if (!data) return <div className="loading"><Logo /><div className="spinner" /><p>셀러의 새로운 시작을 준비하고 있어요.</p></div>;
 
   // ── 공개 화면 ──
-  if (seg[0] === 'reset' && seg[1]) return <PublicLayout><ResetPage token={seg[1]} /></PublicLayout>;
+  if (seg[0] === 'reset' && seg[1]) return <AuthLayout><ResetPage token={seg[1]} /></AuthLayout>;
   if (seg[0] === 'verify') return <PublicLayout><VerifyPage code={seg[1]} /></PublicLayout>;
   if (path === '/courses') return <PublicLayout><CatalogPage /></PublicLayout>;
   if (seg[0] === 'course' && seg[1]) return <PublicLayout><CourseDetailPage id={decodeURIComponent(seg[1])} /></PublicLayout>;
@@ -42,9 +42,9 @@ function Router() {
   // 비로그인 미리보기 강의
   if (seg[0] === 'lesson' && !user) {
     if (lesson?.preview) return <PublicLayout><main className="container section"><LessonPage key={lesson.id} lesson={lesson} /></main></PublicLayout>;
-    return <PublicLayout><LoginPage redirectTo={path} /></PublicLayout>;
+    return <AuthLayout><LoginPage redirectTo={path} /></AuthLayout>;
   }
-  if (path === '/login' || (protectedPath && !user)) return <PublicLayout><LoginPage redirectTo={protectedPath ? path : undefined} /></PublicLayout>;
+  if (path === '/login' || (protectedPath && !user)) return <AuthLayout><LoginPage redirectTo={protectedPath ? path : undefined} /></AuthLayout>;
 
   // ── 로그인 포털 ──
   if (protectedPath && user) {
