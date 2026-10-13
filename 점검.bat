@@ -1,28 +1,22 @@
 @echo off
-chcp 949 > nul
-title 셀러브릭스 에듀 - 자동 점검
+setlocal
 cd /d "%~dp0"
-set COREPACK_ENABLE_DOWNLOAD_PROMPT=0
-
+title Sellerbricks EDU - smoke test
+where node >nul 2>nul
+if errorlevel 1 goto nonode
 echo.
-echo  ============================================================
-echo    셀러브릭스 에듀 - 자동 점검 (API 회귀 테스트)
-echo  ============================================================
-echo    먼저 "시작.bat" 또는 "빌드-미리보기.bat" 으로
-echo    서버가 떠 있어야 합니다.  (http://127.0.0.1:3040)
-echo.
-echo    주의: 체험 계정과 테스트 데이터를 만듭니다.
-echo          로컬에서만 실행하세요.
-echo  ============================================================
+echo   Run this while the server is running (start or build-preview window open).
+echo   It creates demo accounts and test data - local only.
 echo.
 pause
-echo.
+node scripts\smoke-test.mjs
+goto end
 
-call node scripts\smoke-test.mjs
-
+:nonode
 echo.
-echo  ------------------------------------------------------------
-echo   점검이 끝났습니다. 위 결과에서 실패 항목이 있는지 확인하세요.
-echo  ------------------------------------------------------------
+echo   [ERROR] Node.js is not installed (or not in PATH).
+echo   Install Node.js 24 LTS from https://nodejs.org , then run this file again.
+
+:end
 echo.
 pause

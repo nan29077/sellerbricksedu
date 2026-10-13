@@ -25,6 +25,13 @@ Node.js 24 LTS, Corepack과 인터넷 연결이 필요합니다. 기존 링고 �
 | `빌드-미리보기.bat` | 운영과 동일하게 빌드 후 실행 — 배포 전 최종 확인용 |
 | `점검.bat` | 서버가 떠 있는 상태에서 API 자동 점검 실행 |
 
+배치 파일은 `scripts/local-run.mjs` 를 실행하는 짧은 영문 래퍼입니다(인코딩 문제 방지). corepack 이 없어도 실행되며, `node_modules` 가 없을 때만 `corepack pnpm install` → `npx pnpm@11.25.0 install` 순으로 설치합니다. 서버가 응답하면 브라우저가 자동으로 열립니다.
+
+**실행이 안 될 때**
+- `[ERROR] Node.js is not installed` → https://nodejs.org 에서 24 LTS 설치 후 다시 실행
+- `3040 포트를 다른 프로그램이 사용 중` → 기존 서버 창(검은 창)을 닫고 다시 실행
+- 그 밖의 오류 → 창에 표시된 마지막 메시지를 캡처해 전달
+
 직접 명령으로 실행하려면:
 ```powershell
 Set-Location 'E:\프로젝트\셀러브릭스 에듀'
