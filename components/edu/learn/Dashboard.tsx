@@ -1,5 +1,6 @@
 'use client';
-import { BookOpen, CheckCircle2, Clock, Trophy, Play, ChevronRight, Flame, Target, GraduationCap, Megaphone, ClipboardList, Award, Pin, CalendarDays, MessagesSquare } from 'lucide-react';
+import { BookOpen, CheckCircle2, Clock, Trophy, Play, ChevronRight, Flame, Target, GraduationCap, Megaphone, ClipboardList, Award, Pin, CalendarDays, MessagesSquare, ListChecks, BarChart3 } from 'lucide-react';
+import { todayPlan, weekDays, dday, ddayLabel } from '../../../lib/insights';
 import { useState } from 'react';
 import { useEdu } from '../../../lib/edu-store';
 import { fmt, fmtLong, fmtShort, streak, thisWeek, heatmap, badges, kstDay } from '../../../lib/learning';
@@ -37,9 +38,16 @@ export function Dashboard() {
   const week = thisWeek(data.learningDays);
   const goal = user.weekly_goal || 3;
   const cohort = data.cohorts.find((c) => c.id === data.memberships.find((m) => m.user_id === user.id)?.cohort_id);
-  const myBadges = badges(progress, data.learningDays, data.certificates.length, data.notes.length, data.messages.filter((m) => m.user_id === user.id).length);
+  const myBadges = badges(progress, data.learningDays, data.certificates.length, data.notes.length, data.messages.filter((m) => m.user_id === user.id).length, { passed: data.submissions.filter((s) => s.status === 'passed').length, posts: data.posts.filter((p) => p.user_id === user.id).length, events: data.events.filter((e) => e.mine).length });
   const earned = myBadges.filter((b) => b.earned);
-  const pendingAssignments = data.assignments.filter((a) => !data.submissions.some((s) => s.assignment_id === a.id && s.status !== 'revise'));
+  const pendingAssignments = data.assignments.filter((a) => !data.submissions.some((s) => s.assignment_id === a.id && s.status !== 'revise')).sort((a, b) => (a.due || '9999').localeCompare(b.due || '9999'));
+  const plan = todayPlan(courses, lessons, progress, 3);
+  const planMin = Math.round(plan.reduce((s, l) => s + Math.max(0, l.duration - (pfor(l.id).watched || 0)), 0) / 60);
+  const wd = weekDays(data.learningDays);
+  const maxMin = Math.max(30, ...wd.map((d) => d.minutes));
+  const bestDay = [...wd].sort((a, b) => b.minutes - a.minutes)[0];
+  const unreadNotices = data.announcements.filter((a) => !a.read).length;
+  const revise = data.submissions.filter((s) => s.status === 'revise').length;
   const today = data.learningDays.find((d) => d.day === kstDay());
   const inProgress = courses.filter((c) => { const p = pct(c.id); return p > 0 && p < 100; });
   const recommended = courses.filter((c) => pct(c.id) === 0).slice(0, 3);
@@ -100,17 +108,38 @@ export function Dashboard() {
         </div>
       )}
 
+      <div className="dash-two">
+        <div className="panel plan-panel">
+          <div className="section-heading"><div><h3><ListChecks size={18} className="purple" /> 오늘의 학습 플랜</h3><p className="muted">{plan.length ? `${plan.length}강 · 약 ${planMin}분이면 끝나요` : '모든 강의를 완료했어요'}</p></div></div>
+          {plan.length ? (
+            <ol className="plan-list">
+              {plan.map((l, i) => { const p = pfor(l.id); const c = courses.find((x) => x.id === l.course_id); return (
+                <li key={l.id}><button onClick={() => go('/lesson/' + l.id)}><span>{i + 1}</span><div><b>{l.title}</b><small>{c?.title} · {fmt(l.duration)}{p.watched && !p.complete ? ` · ${Math.min(100, Math.round((p.watched / l.duration) * 100))}% 시청` : ''}</small></div><Play size={15} /></button></li>
+              ); })}
+            </ol>
+          ) : <p className="muted small-muted">다음 과정이 열리면 이곳에 추천 강의가 표시돼요.</p>}
+        </div>
+        <div className="panel week-panel">
+          <div className="section-heading"><div><h3><BarChart3 size={18} className="purple" /> 이번 주 학습 리듬</h3><p className="muted">{bestDay.minutes ? `${bestDay.name}요일에 가장 많이 학습했어요 (${bestDay.minutes}분)` : '이번 주 첫 학습을 기록해 보세요'}</p></div></div>
+          <div className="week-bars" role="img" aria-label="이번 주 요일별 학습 시간">
+            {wd.map((d) => <div key={d.day} className={'wb' + (d.today ? ' today' : '') + (d.future ? ' future' : '')} title={`${d.day} · ${d.minutes}분${d.completed ? ` · ${d.completed}강 완료` : ''}`}><em>{d.minutes ? d.minutes + '분' : ''}</em><i style={{ height: `${d.minutes ? Math.max(6, Math.round((d.minutes / maxMin) * 100)) : 2}%` }} /><small>{d.name}</small></div>)}
+          </div>
+        </div>
+      </div>
+
+      {revise > 0 && <div className="info-note warn"><ClipboardList size={16} /> 보완 요청을 받은 과제가 {revise}개 있어요. <button className="text-link" onClick={() => go('/learn/assignments')}>피드백 확인하기</button></div>}
+
       {(() => { const up = data.events.filter((e) => new Date(e.ends || e.starts).getTime() > nowMs).sort((a, b) => a.starts.localeCompare(b.starts))[0]; return up ? (
         <div className="event-banner"><CalendarDays size={20} /><div><b>{up.title}</b><small>{fmtDT(up.starts)} · {up.mine ? '참석 신청 완료' : `${up.going}명 참석 예정`}</small></div><Button small secondary={!!up.mine} onClick={() => go('/learn/events')}>{up.mine ? '일정 보기' : '참석 신청'}</Button></div>
       ) : null; })()}
       <div className="dash-two">
         <div className="panel">
-          <div className="section-heading"><div><h3><Megaphone size={18} className="purple" /> 공지사항</h3></div><button onClick={() => go('/learn/notices')}>전체 보기 <ChevronRight size={15} /></button></div>
-          {data.announcements.length ? data.announcements.slice(0, 4).map((a) => <button className="list-row" key={a.id} onClick={() => go('/learn/notices')}>{a.pinned ? <Pin size={14} className="purple" /> : <span className="dot" />}<b>{a.title}</b><small>{fmtShort(a.created)}</small></button>) : <p className="muted small-muted">새 공지가 없어요.</p>}
+          <div className="section-heading"><div><h3><Megaphone size={18} className="purple" /> 공지사항 {unreadNotices > 0 && <Pill tone="warn">새 공지 {unreadNotices}</Pill>}</h3></div><button onClick={() => go('/learn/notices')}>전체 보기 <ChevronRight size={15} /></button></div>
+          {data.announcements.length ? data.announcements.slice(0, 4).map((a) => <button className="list-row" key={a.id} onClick={() => go('/learn/notices')}>{a.pinned ? <Pin size={14} className="purple" /> : <span className={'dot' + (a.read ? ' read' : '')} />}<b className={a.read ? 'read' : ''}>{a.title}</b><small>{fmtShort(a.created)}</small></button>) : <p className="muted small-muted">새 공지가 없어요.</p>}
         </div>
         <div className="panel">
           <div className="section-heading"><div><h3><ClipboardList size={18} className="purple" /> 제출할 과제</h3></div><button onClick={() => go('/learn/assignments')}>전체 보기 <ChevronRight size={15} /></button></div>
-          {pendingAssignments.length ? pendingAssignments.slice(0, 4).map((a) => <button className="list-row" key={a.id} onClick={() => go('/learn/assignments')}><span className="dot warn" /><b>{a.title}</b><small>{a.due ? `마감 ${fmtShort(a.due)}` : courses.find((c) => c.id === a.course_id)?.title}</small></button>) : <p className="muted small-muted">제출할 과제가 없어요.</p>}
+          {pendingAssignments.length ? pendingAssignments.slice(0, 4).map((a) => <button className="list-row" key={a.id} onClick={() => go('/learn/assignments')}><span className="dot warn" /><b>{a.title}</b>{a.due ? <Pill tone={(dday(a.due) ?? 9) <= 2 ? 'bad' : ''}>{ddayLabel(dday(a.due))}</Pill> : <small>{courses.find((c) => c.id === a.course_id)?.title}</small>}</button>) : <p className="muted small-muted">제출할 과제가 없어요.</p>}
         </div>
       </div>
 

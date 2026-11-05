@@ -4,6 +4,7 @@ import { GraduationCap, BookOpen, Bookmark, LayoutDashboard, Users, Video, Setti
 import { useEdu } from '../../../lib/edu-store';
 import { relTime } from '../../../lib/learning';
 import { CharacterAvatar, Logo } from '../ui';
+import { SiteBanner } from './SiteBanner';
 import { ROLES } from '../../../lib/constants';
 
 type MenuItem = [string, string, LucideIcon, string?];
@@ -12,7 +13,7 @@ const MENU_STUDENT: MenuItem[] = [
   ['/learn/courses', '나의 강의실', BookOpen],
   ['/learn/paths', '학습 경로', Route],
   ['/learn/events', '라이브 세션·일정', CalendarDays, 'events'],
-  ['/learn/assignments', '과제', ClipboardList],
+  ['/learn/assignments', '과제', ClipboardList, 'revise'],
   ['/learn/bookmarks', '책갈피', Bookmark, 'bookmarks'],
   ['/learn/notes', '학습 노트', PenLine],
   ['/learn/achievements', '학습 기록·배지', Award],
@@ -65,6 +66,7 @@ function NotificationBell() {
           <div className="notif-head">
             <b>알림</b>
             {unread > 0 && <button onClick={() => act('notif_read', { all: true })}>모두 읽음</button>}
+            {list.some((n) => n.read) && <button onClick={() => act('notif_clear')}>읽은 알림 지우기</button>}
             <button onClick={() => setOpen(false)} aria-label="닫기"><X size={16} /></button>
           </div>
           {list.length ? (
@@ -104,7 +106,8 @@ export function PortalLayout({ children }: { children: ReactNode }) {
   if (!user || !data) return null;
   const counts: Record<string, number> = {
     bookmarks: progress.filter((p) => p.bookmark).length,
-    notices: data.announcements.filter((a) => new Date(a.created).getTime() > nowMs - 7 * 86400000).length,
+    notices: data.announcements.filter((a) => !a.read && new Date(a.created).getTime() > nowMs - 30 * 86400000).length,
+    revise: (data.submissions ?? []).filter((s) => s.status === 'revise' && s.user_id === user.id).length,
     events: (data.events ?? []).filter((e) => new Date(e.starts).getTime() > nowMs && new Date(e.starts).getTime() - nowMs < 7 * 86400000).length,
     submissions: (data.submissions ?? []).filter((s) => s.status === 'submitted').length,
     pending: (data.users ?? []).filter((u) => u.status === 'pending').length,
@@ -116,6 +119,9 @@ export function PortalLayout({ children }: { children: ReactNode }) {
     ...data.courses.filter((c) => c.title.includes(q)).slice(0, 3).map((c) => ({ key: 'c' + c.id, title: c.title, sub: '과정 · ' + c.category, to: '/course/' + c.id })),
     ...data.lessons.filter((l) => l.title.includes(q) || l.summary.includes(q)).slice(0, 5).map((l) => ({ key: 'l' + l.id, title: l.title, sub: '강의 · ' + (data.courses.find((c) => c.id === l.course_id)?.title || ''), to: '/lesson/' + l.id })),
     ...(data.posts ?? []).filter((p) => p.title.includes(q)).slice(0, 3).map((p) => ({ key: 'p' + p.id, title: p.title, sub: '라운지 · ' + p.name, to: '/learn/lounge/' + p.id })),
+    ...data.events.filter((e) => e.title.includes(q)).slice(0, 2).map((e) => ({ key: 'e' + e.id, title: e.title, sub: '일정 · ' + e.starts.slice(0, 10), to: admin ? '/admin/events' : '/learn/events' })),
+    ...data.assignments.filter((a) => a.title.includes(q)).slice(0, 2).map((a) => ({ key: 's' + a.id, title: a.title, sub: '과제', to: admin ? '/admin/assignments' : '/learn/assignments' })),
+    ...(data.faqs ?? []).filter((f) => f.question.includes(q)).slice(0, 2).map((f) => ({ key: 'f' + f.id, title: f.question, sub: 'FAQ', to: '/faq' })),
     ...data.announcements.filter((a) => a.title.includes(q)).slice(0, 2).map((a) => ({ key: 'a' + a.id, title: a.title, sub: '공지', to: admin ? '/admin/announcements' : '/learn/notices' })),
   ] : [];
   return (
@@ -135,7 +141,7 @@ export function PortalLayout({ children }: { children: ReactNode }) {
           <GraduationCap size={25} />
           <b>{admin ? '성장의 시작을 설계하세요.' : '나의 첫 라이브, 차근차근.'}</b>
           <p>{admin ? '교육 과정부터 학습 현황까지.' : '짧은 배움이 큰 자신감으로.'}</p>
-          <button onClick={() => go('/guide')}>에듀 학습 가이드 <ChevronRight size={15} /></button>
+          <button onClick={() => go('/guide')}>캠퍼스 학습 가이드 <ChevronRight size={15} /></button>
         </div>
         <div className="sidebar-bottom">
           <button className="sidebar-utility" onClick={() => go('/')}><BookOpen size={17} /> 메인으로</button>
@@ -150,6 +156,7 @@ export function PortalLayout({ children }: { children: ReactNode }) {
       </aside>
       {mobile && <button className="sidebar-backdrop" onClick={() => setMobile(false)} aria-label="메뉴 닫기" />}
       <div className="portal-main">
+        <SiteBanner />
         <header className="portal-header">
           <div>
             <button className="mobile-menu" onClick={() => setMobile(!mobile)} aria-label="메뉴 열기"><Menu size={23} /></button>
@@ -168,12 +175,12 @@ export function PortalLayout({ children }: { children: ReactNode }) {
             )}
           </div>
           <div>
-            <button onClick={() => go('/')}><BookOpen size={16} /><span>에듀 홈</span></button>
+            <button onClick={() => go('/')}><BookOpen size={16} /><span>캠퍼스 홈</span></button>
             <NotificationBell />
           </div>
         </header>
         <main className="portal-content">{children}</main>
-        <div className="portal-footer">© Sellerbricks Edu <span>배움으로 시작하는 셀러의 성장</span></div>
+        <div className="portal-footer">© Sellerbricks Campus <span>배움으로 시작하는 셀러의 성장</span><span className="portal-legal"><button onClick={() => go('/terms')}>이용약관</button><button onClick={() => go('/privacy')}><b>개인정보처리방침</b></button></span></div>
       </div>
     </div>
   );

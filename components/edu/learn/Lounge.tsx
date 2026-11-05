@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
-import { Plus, Search, Heart, MessageCircle, Pin, Lock, Trash2, PenLine, ChevronLeft, Shield, Send } from 'lucide-react';
+import { Plus, Search, Heart, MessageCircle, Pin, Lock, Trash2, PenLine, ChevronLeft, Shield, Send, Flame } from 'lucide-react';
 import { useEdu } from '../../../lib/edu-store';
 import { relTime } from '../../../lib/learning';
 import type { Comment, Post } from '../../../lib/types';
@@ -17,7 +17,15 @@ export function LoungePage() {
   const [category, setCategory] = useState('전체');
   const [search, setSearch] = useState('');
   const [mine, setMine] = useState(false);
-  const posts = useMemo(() => (data?.posts ?? []).filter((p) => (category === '전체' || p.category === category) && (!mine || p.user_id === user?.id) && (!search || p.title.includes(search) || p.excerpt.includes(search) || p.name.includes(search))), [data?.posts, category, search, mine, user?.id]);
+  const [sort, setSort] = useState<'recent' | 'popular' | 'comments' | 'unanswered'>('recent');
+  const posts = useMemo(() => {
+    const base = (data?.posts ?? []).filter((p) => (category === '전체' || p.category === category) && (!mine || p.user_id === user?.id) && (sort !== 'unanswered' || p.comments === 0) && (!search || p.title.includes(search) || p.excerpt.includes(search) || p.name.includes(search)));
+    if (sort === 'popular') return [...base].sort((a, b) => b.likes * 2 + b.comments - (a.likes * 2 + a.comments));
+    if (sort === 'comments') return [...base].sort((a, b) => b.comments - a.comments);
+    return base;
+  }, [data?.posts, category, search, mine, sort, user?.id]);
+  const [weekAgo] = useState(() => new Date(Date.now() - 7 * 86400000).toISOString());
+  const hot = useMemo(() => (data?.posts ?? []).filter((p) => p.created >= weekAgo && (p.likes + p.comments) > 0 && !p.pinned).sort((a, b) => b.likes * 2 + b.comments - (a.likes * 2 + a.comments)).slice(0, 3), [data?.posts, weekAgo]);
   const [visiblePosts, more] = useLimit(posts, 20);
   if (!data || !user) return null;
   return (
@@ -27,7 +35,10 @@ export function LoungePage() {
         <Tabs items={POST_CATEGORIES} value={category} onChange={setCategory} />
         <div className="search"><Search size={17} /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="제목·내용·작성자 검색" aria-label="라운지 검색" /></div>
       </div>
-      <div className="filter-row secondary"><label className="check-label inline"><input type="checkbox" checked={mine} onChange={(e) => setMine(e.target.checked)} /><span>내가 쓴 글만</span></label><span className="small-muted">{posts.length}개</span></div>
+      {hot.length > 0 && category === '전체' && !search && !mine && (
+        <div className="panel hot-posts"><h3><Flame size={18} className="purple" /> 이번 주 인기글</h3>{hot.map((p, i) => <button className="list-row" key={p.id} onClick={() => go('/learn/lounge/' + p.id)}><span className="hot-rank">{i + 1}</span><Pill>{p.category}</Pill><b>{p.title}</b><small><Heart size={12} /> {p.likes} · <MessageCircle size={12} /> {p.comments}</small></button>)}</div>
+      )}
+      <div className="filter-row secondary"><label className="check-label inline"><input type="checkbox" checked={mine} onChange={(e) => setMine(e.target.checked)} /><span>내가 쓴 글만</span></label><select aria-label="정렬" value={sort} onChange={(e) => setSort(e.target.value as any)}><option value="recent">최신순</option><option value="popular">인기순</option><option value="comments">댓글 많은 순</option><option value="unanswered">댓글 없는 글</option></select><span className="small-muted">{posts.length}개</span></div>
       {posts.length ? (
         <div className="post-list">
           {visiblePosts.map((p) => (

@@ -49,10 +49,13 @@ export async function buildPayload(user: SessionUser | null) {
   const announcements = user
     ? await all(
         admin
-          ? 'SELECT announcements.*, cohorts.name AS cohort_name FROM announcements LEFT JOIN cohorts ON cohorts.id=announcements.cohort_id ORDER BY pinned DESC, created DESC'
-          : `SELECT announcements.*, cohorts.name AS cohort_name FROM announcements LEFT JOIN cohorts ON cohorts.id=announcements.cohort_id
+          ? `SELECT announcements.*, cohorts.name AS cohort_name, (SELECT COUNT(*) FROM announcement_reads WHERE announcement_id=announcements.id) AS reads,
+             EXISTS(SELECT 1 FROM announcement_reads WHERE announcement_id=announcements.id AND user_id=?) AS read
+             FROM announcements LEFT JOIN cohorts ON cohorts.id=announcements.cohort_id ORDER BY pinned DESC, created DESC`
+          : `SELECT announcements.*, cohorts.name AS cohort_name, EXISTS(SELECT 1 FROM announcement_reads WHERE announcement_id=announcements.id AND user_id=?) AS read
+             FROM announcements LEFT JOIN cohorts ON cohorts.id=announcements.cohort_id
              WHERE announcements.cohort_id IS NULL OR announcements.cohort_id IN (SELECT cohort_id FROM memberships WHERE user_id=?) ORDER BY pinned DESC, created DESC LIMIT 100`,
-        ...(admin ? [] : [user.id]),
+        ...(admin ? [user.id] : [user.id, user.id]),
       )
     : await all('SELECT *, NULL AS cohort_name FROM announcements WHERE cohort_id IS NULL ORDER BY pinned DESC, created DESC LIMIT 20');
   const cohorts = await all('SELECT * FROM cohorts ORDER BY starts DESC, name');
@@ -131,7 +134,7 @@ export async function buildPayload(user: SessionUser | null) {
       ),
       all('SELECT * FROM progress'),
       all('SELECT id,questions FROM lessons'),
-      all('SELECT activity_log.*, users.name FROM activity_log JOIN users ON users.id=activity_log.user_id ORDER BY activity_log.created DESC LIMIT 80'),
+      all('SELECT activity_log.*, users.name FROM activity_log JOIN users ON users.id=activity_log.user_id ORDER BY activity_log.created DESC LIMIT 400'),
       all(`SELECT day, COUNT(DISTINCT user_id) AS learners, SUM(seconds) AS seconds, SUM(completed) AS completed FROM learning_days WHERE day>=? GROUP BY day ORDER BY day`, kstDay(new Date(Date.now() - 29 * 86400000))),
       superAdmin ? all('SELECT password_resets.token, password_resets.user_id, password_resets.expires, users.name FROM password_resets JOIN users ON users.id=password_resets.user_id WHERE expires>? ORDER BY password_resets.created DESC', Date.now()) : Promise.resolve([]),
       all('SELECT provider, user_id FROM oauth_accounts'),

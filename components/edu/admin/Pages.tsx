@@ -1,6 +1,8 @@
 'use client';
 import { useState } from 'react';
-import { Plus, GraduationCap, PenLine, Trash2, Pin, Megaphone, ClipboardList, ExternalLink, Sparkles, Copy, Lock, Mail, KeyRound, Settings2, CheckCircle2, Video, Eye, EyeOff } from 'lucide-react';
+import { Plus, GraduationCap, PenLine, Trash2, Pin, Megaphone, ClipboardList, ExternalLink, Sparkles, Copy, Lock, Mail, KeyRound, Settings2, CheckCircle2, Video, Eye, EyeOff, FileText, BellRing, Search, Download } from 'lucide-react';
+import { downloadCsv } from '../../../lib/learning';
+import { dday, ddayLabel } from '../../../lib/insights';
 import { useEdu } from '../../../lib/edu-store';
 import { fmtShort, relTime } from '../../../lib/learning';
 import { Button, Empty, PageHead, Pill, ProgressBar, Tabs } from '../ui';
@@ -8,11 +10,32 @@ import { ContentTransfer } from './Extras';
 
 export function AdminCohorts() {
   const { data, lessons, openModal, perform, ask, go, superAdmin } = useEdu();
+  const [weekAgo] = useState(() => new Date(Date.now() - 7 * 86400000).toISOString());
   if (!data) return null;
   const label: Record<string, string> = { recruiting: '모집 중', active: '교육 중', completed: '교육 종료' };
+  const users = (data.users ?? []).filter((u) => u.role === 'student');
+  const rows = [...data.cohorts.map((c) => ({ id: c.id, name: c.name, ids: (data.memberships ?? []).filter((m) => m.cohort_id === c.id).map((m) => m.user_id) })), { id: '', name: '기수 미배정', ids: users.filter((u) => !u.cohort_id).map((u) => u.id) }]
+    .filter((r) => r.ids.length || r.id)
+    .map((r) => {
+      const us = users.filter((u) => r.ids.includes(u.id));
+      const done = (data.allProgress ?? []).filter((p) => r.ids.includes(p.user_id) && p.complete).length;
+      const active = us.filter((u) => u.last_active && u.last_active >= weekAgo).length;
+      const certified = new Set((data.allCertificates ?? []).filter((x) => r.ids.includes(x.user_id)).map((x) => x.user_id)).size;
+      const subs = (data.submissions ?? []).filter((s) => r.ids.includes(s.user_id)).length;
+      return { ...r, us, n: us.length, avg: us.length && lessons.length ? Math.round((done / (us.length * lessons.length)) * 100) : 0, active: us.length ? Math.round((active / us.length) * 100) : 0, certified, subs };
+    });
   return (
     <>
       <PageHead title="기수 관리" sub="교육 기간과 참여 교육생을 기수별로 구성하고 학습 현황을 확인하세요." action={<Button small onClick={() => openModal('cohort', { name: '', starts: '', ends: '', description: '', status: 'recruiting' })}><Plus size={17} /> 기수 등록</Button>} />
+      {rows.length > 0 && (
+        <div className="panel table-panel">
+          <div className="section-heading"><div><h2>기수 비교</h2><p className="muted">기수별 참여도와 성과를 한 표에서 비교하세요.</p></div><Button small secondary onClick={() => downloadCsv('sellerbricks-cohorts.csv', [['기수', '교육생', '평균 완료율(%)', '7일 활동률(%)', '수료자', '과제 제출'], ...rows.map((r) => [r.name, r.n, r.avg, r.active, r.certified, r.subs])])}><Download size={14} /> CSV</Button></div>
+          <div className="table-scroll"><table className="data-table">
+            <thead><tr><th>기수</th><th>교육생</th><th>평균 완료율</th><th>7일 활동률</th><th>수료자</th><th>과제 제출</th><th /></tr></thead>
+            <tbody>{rows.map((r) => <tr key={r.id || 'none'}><td><b>{r.name}</b></td><td>{r.n}명</td><td><div className="cell-bar"><i style={{ width: r.avg + '%' }} /><span>{r.avg}%</span></div></td><td className={r.active < 30 && r.n ? 'bad-text' : ''}>{r.active}%</td><td>{r.certified}명</td><td>{r.subs}건</td><td>{r.n > 0 && <Button small secondary onClick={() => openModal('nudge', { ids: r.us.map((u) => u.id), title: '', body: '', link: '/learn', name: r.name })}><BellRing size={13} /> 알림</Button>}</td></tr>)}</tbody>
+          </table></div>
+        </div>
+      )}
       <div className="members-grid">
         {data.cohorts.map((c) => {
           const ids = (data.memberships ?? []).filter((m) => m.cohort_id === c.id).map((m) => m.user_id);
@@ -45,6 +68,8 @@ export function AdminCohorts() {
 export function AdminAnnouncements() {
   const { data, openModal, perform, ask } = useEdu();
   if (!data) return null;
+  const active = (data.users ?? []).filter((u) => u.role === 'student' && u.status === 'active');
+  const targetOf = (cohortId: string | null) => cohortId ? active.filter((u) => u.cohort_id === cohortId).length : active.length;
   return (
     <>
       <PageHead title="공지 관리" sub="전체 또는 기수별 공지를 등록하면 교육생에게 알림이 전달됩니다." action={<Button small onClick={() => openModal('announcement', { title: '', body: '', cohortId: '', pinned: 0, notify: true })}><Plus size={17} /> 공지 등록</Button>} />
@@ -53,6 +78,7 @@ export function AdminAnnouncements() {
           <div className="between"><div className="qa-meta">{a.pinned ? <Pill tone="info"><Pin size={11} /> 고정</Pill> : null}<Pill>{a.cohort_name ? a.cohort_name + ' 공지' : '전체 공지'}</Pill></div><small>{fmtShort(a.created)}</small></div>
           <h2>{a.title}</h2>
           <p className="clamp">{a.body}</p>
+          {(() => { const t = targetOf(a.cohort_id), r = Math.min(a.reads || 0, t || (a.reads || 0)); const v = t ? Math.round((r / t) * 100) : 0; return <div className="read-rate"><span>읽음 {r} / {t}명</span><div className="progress-track small"><i style={{ width: v + '%' }} /></div><b>{v}%</b>{t > r && <button className="text-link" onClick={() => openModal('nudge', { ids: active.filter((u) => !a.cohort_id || u.cohort_id === a.cohort_id).map((u) => u.id), title: `공지 확인 부탁드려요: ${a.title}`, body: a.body.slice(0, 120), link: '/learn/notices' })}><BellRing size={13} /> 다시 알리기</button>}</div>; })()}
           <div className="admin-actions">
             <Button small secondary onClick={() => openModal('announcement', { ...a, cohortId: a.cohort_id || '' })}><PenLine size={14} /> 편집</Button>
             <Button small secondary onClick={() => perform('announcement', { ...a, cohortId: a.cohort_id || '', pinned: a.pinned ? 0 : 1 }, a.pinned ? '고정을 해제했습니다.' : '상단에 고정했습니다.')}><Pin size={14} /> {a.pinned ? '고정 해제' : '고정'}</Button>
@@ -65,24 +91,39 @@ export function AdminAnnouncements() {
 }
 
 export function AdminAssignments() {
-  const { data, courses, lessons, openModal, perform, ask } = useEdu();
+  const { data, courses, lessons, openModal, perform, ask, act, setToast } = useEdu();
   const [tab, setTab] = useState<'submitted' | 'all' | 'manage'>('submitted');
+  const [aFilter, setAFilter] = useState('all');
+  const [q, setQ] = useState('');
   if (!data) return null;
   const subs = data.submissions ?? [];
-  const shown = tab === 'submitted' ? subs.filter((s) => s.status === 'submitted') : subs;
+  const activeStudents = (data.users ?? []).filter((u) => u.role === 'student' && u.status === 'active').length;
+  const shown = (tab === 'submitted' ? subs.filter((s) => s.status === 'submitted') : subs).filter((s) => (aFilter === 'all' || s.assignment_id === aFilter) && (!q.trim() || (s.name || '').includes(q.trim()) || (s.email || '').includes(q.trim()) || s.body.includes(q.trim())))
+    .sort((a, b) => tab === 'submitted' ? a.created.localeCompare(b.created) : b.created.localeCompare(a.created));
+  const remind = async (id: string, title: string) => { if (!(await ask(`'${title}' 미제출 교육생에게 알림을 보낼까요?`, '승인된 교육생 중 아직 제출하지 않은 사람에게만 전송됩니다.'))) return; try { const r = await act('assignment_remind', { id }); setToast(`${r.count}명에게 제출 안내를 보냈습니다.`); } catch (e: any) { setToast(e.message, 'error'); } };
   const tone = { submitted: 'warn', passed: 'good', revise: 'bad' } as const;
   const label = { submitted: '검토 대기', passed: '통과', revise: '보완 요청' };
   return (
     <>
       <PageHead title="과제 관리" sub="과정별 실습 과제를 등록하고 교육생의 제출물을 검토하세요." action={<Button small onClick={() => openModal('assignment', { title: '', description: '', courseId: courses[0]?.id, lessonId: '', due: '', position: data.assignments.length + 1, published: 1 })}><Plus size={17} /> 과제 등록</Button>} />
       <Tabs items={[['submitted', `검토 대기 (${subs.filter((s) => s.status === 'submitted').length})`], ['all', `전체 제출물 (${subs.length})`], ['manage', `과제 목록 (${data.assignments.length})`]]} value={tab} onChange={setTab} />
+      {tab !== 'manage' && (
+        <div className="filter-row">
+          <select aria-label="과제 선택" value={aFilter} onChange={(e) => setAFilter(e.target.value)}><option value="all">모든 과제</option>{data.assignments.map((a) => <option key={a.id} value={a.id}>{a.title}</option>)}</select>
+          <div className="search"><Search size={17} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="이름·이메일·내용 검색" aria-label="제출물 검색" /></div>
+          <Button small secondary onClick={() => downloadCsv('sellerbricks-submissions.csv', [['과제', '이름', '이메일', '상태', '점수', '제출일', '검토일', '링크', '피드백'], ...shown.map((s) => [data.assignments.find((a) => a.id === s.assignment_id)?.title || '', s.name, s.email, ({ submitted: '검토 대기', passed: '통과', revise: '보완 요청' } as any)[s.status], s.score ?? '', s.created.slice(0, 10), s.reviewed?.slice(0, 10) || '', s.link, s.feedback])])}><Download size={14} /> CSV</Button>
+        </div>
+      )}
       {tab === 'manage' ? (
         data.assignments.length ? data.assignments.map((a) => (
           <div className="panel assignment-card" key={a.id}>
-            <div className="between"><div><span className="course-label">{courses.find((c) => c.id === a.course_id)?.title}{a.lesson_id ? ` · ${lessons.find((l) => l.id === a.lesson_id)?.title}` : ''}</span><h3>{a.title}</h3></div><div className="qa-meta"><Pill tone={a.published ? 'good' : ''}>{a.published ? '공개' : '비공개'}</Pill>{a.due && <Pill>마감 {fmtShort(a.due)}</Pill>}<Pill>제출 {subs.filter((s) => s.assignment_id === a.id).length}</Pill></div></div>
+            <div className="between"><div><span className="course-label">{courses.find((c) => c.id === a.course_id)?.title}{a.lesson_id ? ` · ${lessons.find((l) => l.id === a.lesson_id)?.title}` : ''}</span><h3>{a.title}</h3></div><div className="qa-meta"><Pill tone={a.published ? 'good' : ''}>{a.published ? '공개' : '비공개'}</Pill>{a.due && <Pill tone={(dday(a.due) ?? 1) < 0 ? '' : (dday(a.due) ?? 9) <= 2 ? 'warn' : ''}>마감 {fmtShort(a.due)} · {ddayLabel(dday(a.due))}</Pill>}</div></div>
             <p className="note-text clamp">{a.description}</p>
+            {(() => { const mine = subs.filter((s) => s.assignment_id === a.id); const done = mine.filter((s) => s.status !== 'revise').length; const v = activeStudents ? Math.round((done / activeStudents) * 100) : 0; return <div className="read-rate"><span>제출 {done} / {activeStudents}명 · 통과 {mine.filter((s) => s.status === 'passed').length} · 대기 {mine.filter((s) => s.status === 'submitted').length}</span><div className="progress-track small"><i style={{ width: Math.min(100, v) + '%' }} /></div><b>{v}%</b></div>; })()}
             <div className="admin-actions">
               <Button small secondary onClick={() => openModal('assignment', { ...a, courseId: a.course_id, lessonId: a.lesson_id || '' })}><PenLine size={14} /> 편집</Button>
+              {a.published ? <Button small secondary onClick={() => remind(a.id, a.title)}><BellRing size={14} /> 미제출자 알림</Button> : null}
+              <Button small secondary onClick={() => { setAFilter(a.id); setTab('all'); }}>제출물 보기</Button>
               <Button small secondary onClick={() => perform('assignment', { ...a, courseId: a.course_id, lessonId: a.lesson_id || '', published: a.published ? 0 : 1 }, '공개 설정을 변경했습니다.')}>{a.published ? <><EyeOff size={14} /> 비공개</> : <><Eye size={14} /> 공개</>}</Button>
               <Button small secondary danger onClick={async () => { if (await ask('과제를 삭제할까요?', '제출물도 함께 삭제됩니다.', { danger: true, confirmLabel: '삭제' })) perform('assignment_delete', { id: a.id }, '과제를 삭제했습니다.'); }}><Trash2 size={14} /></Button>
             </div>
@@ -155,14 +196,14 @@ export function AdminSettings() {
   return (
     <>
       <PageHead title="서비스 연동 설정" sub="수료 기준, 가입 정책, 소셜 로그인, AI와 메일 발송을 설정하세요." />
-      <form className="settings-grid" onSubmit={(e) => { e.preventDefault(); const f = Object.fromEntries(new FormData(e.currentTarget)); for (const k of ['auto_approve', 'oauth_auto_approve', 'demo_mode']) f[k] = f[k] ? '1' : '0'; perform('settings', f, '설정을 저장했습니다.'); }}>
+      <form className="settings-grid" onSubmit={(e) => { e.preventDefault(); const f = Object.fromEntries(new FormData(e.currentTarget)); for (const k of ['auto_approve', 'oauth_auto_approve', 'demo_mode', 'banner_on']) f[k] = f[k] ? '1' : '0'; perform('settings', f, '설정을 저장했습니다.'); }}>
         <div className="panel">
           <h3><Settings2 size={22} /> 학습·수료 기준</h3>
           <div className="form-two">
             <label>퀴즈 통과 점수<input name="pass_score" type="number" min={1} max={100} defaultValue={s.pass_score || 80} /></label>
             <label>퀴즈 응시 가능 시청 비율(%)<input name="watch_ratio" type="number" min={10} max={100} defaultValue={s.watch_ratio || 90} /></label>
           </div>
-          <label>수료증 서명 문구<input name="cert_signer" defaultValue={s.cert_signer || ''} placeholder="셀러브릭스 에듀 운영팀" /></label>
+          <label>수료증 서명 문구<input name="cert_signer" defaultValue={s.cert_signer || ''} placeholder="셀러브릭스 캠퍼스 운영팀" /></label>
           <label>영상 업로드 용량 한도(MB)<input name="max_video_mb" type="number" min={5} max={200} defaultValue={s.max_video_mb || 50} /></label>
           <p className="small-muted">변경한 기준은 이후 학습부터 적용되며 이미 완료된 강의는 유지됩니다.</p>
         </div>
@@ -196,8 +237,31 @@ export function AdminSettings() {
           <p className="muted">Resend API 키와 발신 주소를 등록하면 비밀번호 재설정 메일이 자동 발송됩니다. 없으면 관리자가 교육생 관리에서 링크를 전달합니다.</p>
           <label>Resend API 키<input name="resend_key" type="password" autoComplete="off" placeholder={s.has_resend_key === '1' ? '저장됨 · 변경 시에만 입력' : 're_…'} /></label>
           {s.has_resend_key === '1' && <label className="check-label"><input type="checkbox" name="clear_resend_key" /><span>저장된 Resend 키 삭제</span></label>}
-          <label>발신 주소<input name="mail_from" defaultValue={s.mail_from || ''} placeholder="셀러브릭스 에듀 <edu@yourdomain.com>" /></label>
+          <label>발신 주소<input name="mail_from" defaultValue={s.mail_from || ''} placeholder="셀러브릭스 캠퍼스 <campus@yourdomain.com>" /></label>
           <div className="info-note"><KeyRound size={15} /> 수료증 공개 확인 주소: <code>{origin}/verify</code></div>
+        </div>
+        <div className="panel">
+          <h3><Megaphone size={22} /> 사이트 상단 공지 배너</h3>
+          <p className="muted">모든 화면 맨 위에 한 줄 공지를 띄웁니다. 점검 안내, 모집 마감, 라이브 특강 홍보 등에 활용하세요.</p>
+          <label className="check-label"><input type="checkbox" name="banner_on" defaultChecked={s.banner_on === '1'} /><span>배너 표시</span></label>
+          <label>배너 문구<input name="banner_text" maxLength={200} defaultValue={s.banner_text || ''} placeholder="예) 10월 3기 모집이 시작되었어요! 지금 신청하세요." /></label>
+          <div className="form-two">
+            <label>링크 (선택)<input name="banner_link" defaultValue={s.banner_link || ''} placeholder="/courses 또는 https://…" /></label>
+            <label>색상<select name="banner_tone" defaultValue={s.banner_tone || 'info'}><option value="info">기본 (네이비)</option><option value="good">강조 (옐로)</option><option value="warn">주의 (레드)</option></select></label>
+          </div>
+          <p className="small-muted">문구를 바꾸면 이전에 배너를 닫은 사용자에게도 다시 표시됩니다.</p>
+        </div>
+        <div className="panel">
+          <h3><FileText size={22} /> 이용약관 · 개인정보처리방침</h3>
+          <p className="muted">비워 두면 기본 문안이 표시됩니다. <code>## 제목</code>, <code>- 항목</code> 형식을 쓸 수 있고 <code>{'{site}'}</code>·<code>{'{officer}'}</code>·<code>{'{contact}'}</code>·<code>{'{date}'}</code>는 아래 값으로 바뀝니다.</p>
+          <div className="form-two">
+            <label>개인정보 보호책임자<input name="privacy_officer" defaultValue={s.privacy_officer || ''} placeholder="예) 홍길동 (대표)" /></label>
+            <label>보호책임자 연락처<input name="privacy_contact" defaultValue={s.privacy_contact || ''} placeholder="예) privacy@company.com / 02-000-0000" /></label>
+          </div>
+          <label>시행일<input name="policy_date" type="date" defaultValue={s.policy_date || ''} /></label>
+          <label>이용약관 전문 (선택)<textarea name="terms_text" rows={5} defaultValue={s.terms_text || ''} placeholder="비워 두면 기본 이용약관을 사용합니다." /></label>
+          <label>개인정보처리방침 전문 (선택)<textarea name="privacy_text" rows={5} defaultValue={s.privacy_text || ''} placeholder="비워 두면 기본 개인정보처리방침을 사용합니다." /></label>
+          <div className="info-note"><a className="text-link" href="/terms" target="_blank" rel="noopener">이용약관 보기</a> · <a className="text-link" href="/privacy" target="_blank" rel="noopener">개인정보처리방침 보기</a> — 기본 문안은 참고용 템플릿입니다. 실제 운영 전에 법률 검토를 받으세요.</div>
         </div>
         <button className="button" disabled={busy} type="submit">설정 저장</button>
       </form>

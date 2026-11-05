@@ -27,7 +27,7 @@ const say = (m = '') => console.log('  ' + m);
 const fail = (m) => { console.log('\n  ' + '-'.repeat(58)); say('[오류] ' + m); console.log('  ' + '-'.repeat(58)); process.exit(1); };
 
 console.log('\n ' + line);
-say(`셀러브릭스 에듀 - ${mode === 'dev' ? '개발 서버' : '빌드 미리보기'}`);
+say(`셀러브릭스 캠퍼스 - ${mode === 'dev' ? '개발 서버' : '빌드 미리보기'}`);
 console.log(' ' + line);
 say(`주소 : ${URL_}`);
 say('종료 : 이 창에서 Ctrl + C (또는 창 닫기)');

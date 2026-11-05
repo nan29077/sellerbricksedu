@@ -1,6 +1,6 @@
 {
-  "name": "셀러브릭스 에듀",
-  "short_name": "셀러브릭스 에듀",
+  "name": "셀러브릭스 캠퍼스",
+  "short_name": "셀러브릭스 캠퍼스",
   "icons": [
     { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
     { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }

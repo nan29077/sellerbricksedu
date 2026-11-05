@@ -3,8 +3,9 @@ import { useMemo, useState } from 'react';
 import { Search, Download, KeyRound, Trash2, ShieldCheck, CheckSquare, Square, UserPlus, Copy, BellRing, StickyNote, Shield, Upload } from 'lucide-react';
 import { useEdu } from '../../../lib/edu-store';
 import { ROLES } from '../../../lib/constants';
-import { downloadCsv, fmtLong, fmtShort, relTime } from '../../../lib/learning';
+import { downloadCsv, fmtLong, fmtShort, relTime, kstDay } from '../../../lib/learning';
 import { Button, CharacterAvatar, Empty, PageHead, Pill, ProgressBar, Tabs, statusLabel, statusTone, useLimit } from '../ui';
+import type { AdminUser } from '../../../lib/types';
 
 type Status = 'all' | 'pending' | 'active' | 'suspended' | 'staff' | 'inactive';
 
@@ -16,6 +17,8 @@ export function AdminMembers({ report = false }: { report?: boolean }) {
   const [status, setStatus] = useState<Status>((params?.get('status') as Status) || 'all');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [sort, setSort] = useState<'recent' | 'name' | 'progress' | 'active'>('recent');
+  const [view, setView] = useState<'cards' | 'matrix'>(report ? 'matrix' : 'cards');
+  const matrix = report && view === 'matrix';
   const users = useMemo(() => data?.users ?? [], [data?.users]);
   const allProgress = data?.allProgress ?? [];
   const [weekAgo] = useState(() => new Date(Date.now() - 7 * 86400000).toISOString());
@@ -56,6 +59,7 @@ export function AdminMembers({ report = false }: { report?: boolean }) {
         <select aria-label="정렬" value={sort} onChange={(e) => setSort(e.target.value as any)}><option value="recent">최근 가입순</option><option value="active">최근 활동순</option><option value="progress">완료 강의순</option><option value="name">이름순</option></select>
         <button className="text-link" onClick={() => setSelected(allSelected ? new Set() : new Set(list.map((u) => u.id)))}>{allSelected ? <CheckSquare size={15} /> : <Square size={15} />} 전체 선택</button>
         <span className="small-muted">{list.length}명</span>
+        {report && <div className="seg" role="tablist" aria-label="보기 방식"><button className={view === 'matrix' ? 'selected' : ''} onClick={() => setView('matrix')}>과정별 표</button><button className={view === 'cards' ? 'selected' : ''} onClick={() => setView('cards')}>카드</button></div>}
       </div>
       {ids.length > 0 && (
         <div className="bulk-bar">
@@ -67,7 +71,8 @@ export function AdminMembers({ report = false }: { report?: boolean }) {
           <button className="text-link" onClick={() => setSelected(new Set())}>선택 해제</button>
         </div>
       )}
-      <div className="members-grid">
+      {matrix && <ProgressMatrix list={list} />}
+      <div className="members-grid" hidden={matrix}>
         {visibleList.map((u) => {
           const ps = allProgress.filter((p) => p.user_id === u.id);
           const percent = lessons.length ? Math.round((ps.filter((p) => p.complete).length / lessons.length) * 100) : 0;
@@ -117,13 +122,41 @@ export function AdminMembers({ report = false }: { report?: boolean }) {
           );
         })}
       </div>
-      {more}
+      {!matrix && more}
       {!list.length && <Empty title={status === 'staff' ? '운영진이 없어요' : '교육생을 찾을 수 없어요'} description={status === 'staff' ? '교육생 카드의 방패 버튼으로 운영 관리자를 지정할 수 있어요.' : '교육 가입 신청이 접수되면 이곳에서 확인할 수 있습니다.'} />}
     </>
   );
 }
 
-const KIND_LABEL: Record<string, string> = { login: '로그인', lesson_complete: '강의 완료', quiz: '퀴즈 응시', question: '질문 등록', submit: '과제 제출', certificate: '수료', reply: '질문 답변', member_status: '교육생 상태 변경', member_role: '역할 변경', course_delete: '과정 삭제', lesson_delete: '강의 삭제', review_submission: '과제 검토', password_reset: '비밀번호 재설정', member_delete: '계정 삭제', nudge: '알림 발송' };
+/** 교육생 × 과정 진도 매트릭스 — 셀 색이 진할수록 많이 완료 */
+function ProgressMatrix({ list }: { list: AdminUser[] }) {
+  const { data, courses, ls, pct, openModal } = useEdu();
+  if (!data) return null;
+  const all = data.allProgress ?? [];
+  const cs = courses.filter((c) => ls(c.id).length);
+  const level = (v: number) => (v >= 100 ? 4 : v >= 60 ? 3 : v >= 30 ? 2 : v > 0 ? 1 : 0);
+  const avg = (cid: string) => (list.length ? Math.round(list.reduce((s, u) => s + pct(cid, all.filter((p) => p.user_id === u.id)), 0) / list.length) : 0);
+  return (
+    <div className="panel table-panel">
+      <div className="table-scroll"><table className="data-table matrix">
+        <thead><tr><th>교육생</th>{cs.map((c) => <th key={c.id} title={c.title}><span>{c.title}</span></th>)}<th>전체</th></tr></thead>
+        <tbody>
+          <tr className="avg-row"><td><b>평균</b></td>{cs.map((c) => <td key={c.id}><i className={'h' + level(avg(c.id))}>{avg(c.id)}</i></td>)}<td /></tr>
+          {list.map((u) => { const ps = all.filter((p) => p.user_id === u.id); return (
+            <tr key={u.id} onClick={() => openModal('progress', { memo: u.memo }, { user: u, progress: ps })} className="clickable">
+              <td><b>{u.name}</b><small>{data.cohorts.find((c) => c.id === u.cohort_id)?.name || '미배정'}</small></td>
+              {cs.map((c) => { const v = pct(c.id, ps); return <td key={c.id}><i className={'h' + level(v)} title={`${c.title} ${v}%`}>{v || ''}</i></td>; })}
+              <td><b>{u.completed}강</b></td>
+            </tr>
+          ); })}
+        </tbody>
+      </table></div>
+      <p className="small-muted">숫자는 과정 완료율(%)입니다. 행을 누르면 교육생 상세를 볼 수 있어요.</p>
+    </div>
+  );
+}
+
+const KIND_LABEL: Record<string, string> = { login: '로그인', consent: '약관 동의', lesson_complete: '강의 완료', quiz: '퀴즈 응시', question: '질문 등록', submit: '과제 제출', certificate: '수료', reply: '질문 답변', member_status: '교육생 상태 변경', member_role: '역할 변경', course_delete: '과정 삭제', lesson_delete: '강의 삭제', review_submission: '과제 검토', password_reset: '비밀번호 재설정', member_delete: '계정 삭제', nudge: '알림 발송', post: '라운지 글', progress_reset: '진도 초기화' };
 export { KIND_LABEL };
 
 export function AdminActivity() {
@@ -141,8 +174,13 @@ export function AdminActivity() {
         <div className="search"><Search size={17} /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="이름·내용 검색" aria-label="활동 검색" /></div>
       </div>
       <div className="panel">
-        {list.length ? <ul className="activity-list">{list.map((a) => <li key={a.id}><b>{a.name}</b> {KIND_LABEL[a.kind] || a.kind}{a.detail && <span> · {a.detail}</span>}<small title={a.created}>{relTime(a.created)}</small></li>)}</ul> : <Empty title="활동 기록이 없어요" />}
-        <p className="small-muted">최근 활동 최대 80건을 표시합니다.</p>
+        {list.length ? Array.from(new Set(list.map((a) => kstDay(new Date(a.created))))).map((day) => (
+          <div key={day} className="activity-day">
+            <h4>{fmtShort(day)} <small>{list.filter((a) => kstDay(new Date(a.created)) === day).length}건</small></h4>
+            <ul className="activity-list">{list.filter((a) => kstDay(new Date(a.created)) === day).map((a) => <li key={a.id}><b>{a.name}</b> {KIND_LABEL[a.kind] || a.kind}{a.detail && <span> · {a.detail}</span>}<small title={a.created}>{new Date(a.created).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}</small></li>)}</ul>
+          </div>
+        )) : <Empty title="활동 기록이 없어요" />}
+        <p className="small-muted">최근 활동 최대 400건 중 {list.length}건을 표시합니다.</p>
       </div>
     </>
   );

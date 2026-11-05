@@ -22,6 +22,31 @@ export async function questionDelete({ body, user }: AuthedCtx) {
   return out({ ok: true });
 }
 
+/** 답변 전 내 질문 수정 */
+export async function questionEdit({ body, user }: AuthedCtx) {
+  const text = str(body.body, 5000);
+  if (!text) throw new HttpError(400, '질문을 입력해 주세요.');
+  const r = await run("UPDATE messages SET body=?, public=?, edited=? WHERE id=? AND user_id=? AND reply=''", text, body.isPublic === undefined ? 1 : bool(body.isPublic), now(), str(body.id, 100), user.id);
+  if (!r.meta.changes) throw new HttpError(403, '답변이 달린 질문은 수정할 수 없습니다.');
+  return out({ ok: true });
+}
+
+/** 공지 읽음 처리 — id 하나 또는 all */
+export async function noticeRead({ body, user }: AuthedCtx) {
+  if (body.all) {
+    await run(
+      `INSERT OR IGNORE INTO announcement_reads (announcement_id,user_id,created)
+       SELECT id, ?, ? FROM announcements WHERE cohort_id IS NULL OR cohort_id IN (SELECT cohort_id FROM memberships WHERE user_id=?)`,
+      user.id, now(), user.id,
+    );
+    return out({ ok: true });
+  }
+  const id = str(body.id, 100);
+  if (!(await first('SELECT 1 FROM announcements WHERE id=?', id))) throw new HttpError(404, '공지를 찾을 수 없습니다.');
+  await run('INSERT OR IGNORE INTO announcement_reads (announcement_id,user_id,created) VALUES (?,?,?)', id, user.id, now());
+  return out({ ok: true });
+}
+
 export async function vote({ body, user }: AuthedCtx) {
   const id = str(body.id, 100);
   const m = await first<any>('SELECT id,user_id,public FROM messages WHERE id=?', id);

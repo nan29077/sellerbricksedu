@@ -1,7 +1,7 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-title Sellerbricks EDU - smoke test
+title Sellerbricks CAMPUS - smoke test
 where node >nul 2>nul
 if errorlevel 1 goto nonode
 echo.

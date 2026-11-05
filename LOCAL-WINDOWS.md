@@ -1,4 +1,4 @@
-# 셀러브릭스 에듀 — Windows 개발
+# 셀러브릭스 캠퍼스 — Windows 개발
 
 최종 폴더: `E:\프로젝트\셀러브릭스 에듀`
 개발 주소: http://127.0.0.1:3040
@@ -75,7 +75,7 @@ corepack pnpm start
 ## 자동 점검
 ```powershell
 corepack pnpm start            # 빌드된 사이트 실행 (다른 창)
-corepack pnpm test:smoke       # API 회귀 42개 케이스
+corepack pnpm test:smoke       # API 회귀 54개 케이스
 node scripts/ui-sim.mjs        # 브라우저 시나리오 (Playwright 필요: npm i -g playwright; npx playwright install chromium)
 ```
 둘 다 체험 계정과 테스트 데이터를 만들므로 로컬에서만 실행하세요.

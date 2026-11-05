@@ -13,10 +13,21 @@ export const SETTING_DEFAULTS = {
   naver_secret: '',
   resend_key: '',
   mail_from: '',
-  site_name: '셀러브릭스 에듀',
-  cert_signer: '셀러브릭스 에듀 운영팀',
+  site_name: '셀러브릭스 캠퍼스',
+  cert_signer: '셀러브릭스 캠퍼스 운영팀',
   max_video_mb: '50',
   demo_mode: '1', // 체험 계정(교육생·최고 관리자) 허용. 운영에서는 0 권장
+  // 약관·개인정보 (비어 있으면 기본 문안 사용)
+  terms_text: '',
+  privacy_text: '',
+  privacy_officer: '',
+  privacy_contact: '',
+  policy_date: '',
+  // 사이트 상단 공지 배너
+  banner_on: '0',
+  banner_text: '',
+  banner_link: '',
+  banner_tone: 'info',
 };
 export type SettingKey = keyof typeof SETTING_DEFAULTS;
 
@@ -32,7 +43,7 @@ export async function setSetting(id: string, value: string) {
 }
 
 /** 클라이언트에 노출 가능한 설정(비밀 값 제외) */
-const PUBLIC_KEYS = ['pass_score', 'watch_ratio', 'site_name', 'cert_signer', 'max_video_mb', 'demo_mode'];
+const PUBLIC_KEYS = ['pass_score', 'watch_ratio', 'site_name', 'cert_signer', 'max_video_mb', 'demo_mode', 'terms_text', 'privacy_text', 'privacy_officer', 'privacy_contact', 'policy_date', 'banner_on', 'banner_text', 'banner_link', 'banner_tone'];
 const SECRET = ['ai_key', 'kakao_secret', 'naver_secret', 'resend_key'];
 /** 모든 방문자에게 노출 가능한 설정만 */
 export function publicSettings(map: Record<string, string>) {

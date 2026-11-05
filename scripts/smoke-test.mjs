@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 셀러브릭스 에듀 API 회귀 점검
+ * 셀러브릭스 캠퍼스 API 회귀 점검
  * 사용: 서버를 띄운 뒤  node scripts/smoke-test.mjs [http://127.0.0.1:3040]
  * 체험 계정(demo)을 사용하므로 로컬/스테이징에서만 실행하세요.
  */
@@ -74,6 +74,11 @@ r = await S.call('tnote', { lessonId: data.lessons[0].id, at: 3, body: '메모' 
 check('타임스탬프 노트', r.status === 200);
 r = await S.call('question', { lessonId: data.lessons[0].id, body: '질문입니다', isPublic: true });
 check('질문 등록', r.status === 200);
+{ const mine = (await S.get()).json.messages.find((m) => m.body === '질문입니다' && !m.reply);
+  r = await S.call('question_edit', { id: mine?.id, body: '질문입니다(수정)', isPublic: true });
+  check('답변 전 질문 수정', r.status === 200);
+  r = await S.call('question', { body: '일반 학습 문의', isPublic: false });
+  check('강의 없는 일반 질문 등록', r.status === 200); }
 r = await S.call('review', { courseId: data.lessons[0].course_id, rating: 5, body: '좋아요' });
 check('후기 등록', r.status === 200);
 
@@ -106,6 +111,22 @@ r = await A.call('nudge', { ids: ['demo-student'], title: '점검 알림', body:
 check('독려 알림', r.status === 200);
 const notifs = (await S.get()).json.notifications;
 check('교육생 알림 수신(답변·공지·독려)', notifs.some((n) => n.title.includes('답변')) && notifs.some((n) => n.title === '점검 공지') && notifs.some((n) => n.title === '점검 알림'));
+{ const sp = (await S.get()).json; const ann = sp.announcements.find((a) => a.title === '점검 공지');
+  check('새 공지는 안 읽음 상태', ann && !ann.read);
+  r = await S.call('notice_read', { id: ann?.id });
+  check('공지 읽음 처리', r.status === 200 && (await S.get()).json.announcements.find((a) => a.id === ann?.id)?.read === 1);
+  r = await S.call('notice_read', { all: true });
+  check('공지 모두 읽음', r.status === 200);
+  check('관리자 공지 읽음 수 집계', ((await A.get()).json.announcements.find((a) => a.id === ann?.id)?.reads || 0) >= 1);
+  r = await S.call('notif_read', { all: true }); r = await S.call('notif_clear');
+  check('읽은 알림 지우기', r.status === 200 && (await S.get()).json.notifications.length === 0); }
+r = await A.call('event', { id: evId, title: '점검 세션', starts: '2099-01-01T10:00', cohortId: '', capacity: 0, replay: 'https://example.com/replay' });
+check('다시보기 링크 등록 + 참석자 알림', r.status === 200 && (await S.get()).json.notifications.some((n) => n.title.startsWith('다시보기 등록')));
+r = await A.call('event', { id: evId, title: '점검 세션', starts: '2099-01-01T10:00', replay: 'javascript:alert(1)' });
+check('다시보기 링크 https 검증', r.status === 400);
+if (admin.assignments?.length) { r = await A.call('assignment_remind', { id: admin.assignments[0].id }); check('과제 미제출 리마인드', r.status === 200 && typeof r.json.count === 'number'); }
+r = await S.call('assignment_remind', { id: 'x' });
+check('교육생 과제 리마인드 차단', r.status === 403);
 r = await A.call('reorder', { table: 'courses', ids: admin.courses.map((c) => c.id) });
 check('과정 순서 저장', r.status === 200);
 r = await A.call('invite_bulk', { csv: `점검,smoke-${Date.now()}@test.com` });
@@ -139,6 +160,47 @@ await A.call('settings', { demo_mode: '0' });
 r = await client('x2').call('demo', { role: 'admin' });
 check('체험 계정 끄면 demo 403', r.status === 403);
 await A.call('settings', { demo_mode: '1' });
+
+// ── 약관 동의·회원 탈퇴
+r = await client('reg').call('register', { name: '동의없음', email: `noagree-${Date.now()}@test.com`, password: 'password1234' });
+check('약관 미동의 가입 차단 400', r.status === 400);
+r = await client('reg2').call('register', { name: '동의함', email: `agree-${Date.now()}@test.com`, password: 'password1234', agree: true });
+check('약관 동의 가입 신청', r.status === 200);
+{
+  const em = `wd-${Date.now()}@test.com`;
+  const wid = (await A.call('invite', { name: '탈퇴테스트', email: em })).json.userId;
+  const wtok = (await A.call('reset_link', { userId: wid })).json.link.split('/reset/')[1];
+  const W = client('withdraw');
+  await W.call('reset', { token: wtok, password: 'withdrawpass123' });
+  await W.call('post', { category: '자유', title: '탈퇴 전 글', body: '내용' });
+  r = await W.call('withdraw', { password: 'wrongpass000' });
+  check('탈퇴: 비밀번호 틀리면 400', r.status === 400);
+  r = await W.call('withdraw', { password: 'withdrawpass123' });
+  check('탈퇴 완료', r.status === 200);
+  const after = (await A.get()).json;
+  check('탈퇴 후 계정·게시물 삭제', !after.users.some((u) => u.id === wid) && !after.posts.some((p) => p.user_id === wid));
+  r = await W.call('progress', { lessonId: 'start-1' });
+  check('탈퇴 후 세션 무효(401)', r.status === 401);
+}
+r = await S.call('withdraw', { confirm: '탈퇴' });
+check('체험 계정 탈퇴 차단', r.status === 400);
+
+// ── 설정 검증·배너
+r = await A.call('settings', { banner_on: '1', banner_text: '점검 배너', banner_link: 'javascript:alert(1)' });
+check('배너 링크 검증(javascript: 차단)', r.status === 400);
+check('검증 실패 시 다른 값도 저장 안 됨', (await X.get()).json.settings.banner_text !== '점검 배너');
+r = await A.call('settings', { banner_on: '1', banner_text: '점검 배너', banner_link: '/courses', banner_tone: 'good' });
+const pub = (await X.get()).json.settings;
+check('배너 공개 설정 반영', r.status === 200 && pub.banner_on === '1' && pub.banner_text === '점검 배너' && pub.banner_tone === 'good');
+await A.call('settings', { banner_on: '0', banner_text: '' });
+
+// ── SEO·보안 헤더
+r = await fetch(BASE + '/robots.txt');
+check('robots.txt', r.status === 200 && (await r.text()).includes('Disallow: /admin'));
+r = await fetch(BASE + '/sitemap.xml');
+{ const t = await r.text(); check('sitemap.xml (공개 과정 포함)', r.status === 200 && t.includes('<urlset') && t.includes('/course/')); }
+r = await fetch(BASE + '/');
+check('보안 헤더(nosniff·X-Frame-Options)', r.headers.get('x-content-type-options') === 'nosniff' && r.headers.get('x-frame-options') === 'SAMEORIGIN');
 
 // ── 정리
 await A.call('event_delete', { id: evId });

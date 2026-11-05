@@ -48,7 +48,7 @@ export const chunks = <T,>(arr: T[], size = 90): T[][] => Array.from({ length: M
  * 런타임 스키마 보정 — drizzle 마이그레이션이 적용되지 않은 환경(운영 D1 등)에서도
  * 새 기능이 동작하도록 테이블/컬럼을 멱등하게 추가한다. settings.schema_version 으로 1회만 수행.
  */
-const SCHEMA_VERSION = '6';
+const SCHEMA_VERSION = '8';
 const CREATE_TABLES = [
   // 기본 테이블 (0000/0001 마이그레이션과 동일, 빈 DB에서도 동작하도록)
   `CREATE TABLE IF NOT EXISTS users (id text PRIMARY KEY NOT NULL, email text NOT NULL, name text NOT NULL, role text NOT NULL, password text, status text DEFAULT 'active' NOT NULL, created text NOT NULL)`,
@@ -86,6 +86,9 @@ const CREATE_TABLES = [
   `CREATE TABLE IF NOT EXISTS posts (id text PRIMARY KEY NOT NULL, user_id text NOT NULL, category text DEFAULT '자유' NOT NULL, title text NOT NULL, body text NOT NULL, pinned integer DEFAULT 0 NOT NULL, locked integer DEFAULT 0 NOT NULL, created text NOT NULL, updated text NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS comments (id text PRIMARY KEY NOT NULL, post_id text NOT NULL, user_id text NOT NULL, body text NOT NULL, created text NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS post_likes (post_id text NOT NULL, user_id text NOT NULL, PRIMARY KEY(post_id, user_id))`,
+  `CREATE TABLE IF NOT EXISTS announcement_reads (announcement_id text NOT NULL, user_id text NOT NULL, created text NOT NULL, PRIMARY KEY(announcement_id, user_id))`,
+  `CREATE INDEX IF NOT EXISTS idx_announcement_reads_user ON announcement_reads(user_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_activity_created ON activity_log(created)`,
   `CREATE INDEX IF NOT EXISTS idx_quiz_attempts_lesson ON quiz_attempts(lesson_id)`,
   `CREATE INDEX IF NOT EXISTS idx_comments_post ON comments(post_id)`,
   `CREATE INDEX IF NOT EXISTS idx_progress_user ON progress(user_id)`,
@@ -112,6 +115,9 @@ const ADD_COLUMNS: [string, string, string][] = [
   ['user_profiles', 'bio', `text DEFAULT '' NOT NULL`],
   ['user_profiles', 'memo', `text DEFAULT '' NOT NULL`],
   ['certificates', 'course_title', `text DEFAULT '' NOT NULL`],
+  ['events', 'replay', `text DEFAULT '' NOT NULL`],
+  ['messages', 'edited', `text DEFAULT '' NOT NULL`],
+  ['messages', 'replied', `text DEFAULT '' NOT NULL`],
 ];
 
 let migrated = false;
@@ -133,6 +139,14 @@ export async function migrate() {
         console.warn('column add skipped', table, column, e);
       }
     }
+  }
+  // v7: 브랜드명 변경(에듀 → 캠퍼스). 기본값 그대로 저장된 데이터만 갱신하고 관리자가 직접 바꾼 값은 유지
+  for (const sql of [
+    `UPDATE settings SET value=REPLACE(value,'셀러브릭스 에듀','셀러브릭스 캠퍼스') WHERE id IN ('site_name','cert_signer','mail_from') AND instr(value,'셀러브릭스 에듀')>0`,
+    `UPDATE courses SET instructor='셀러브릭스 캠퍼스 운영팀' WHERE instructor='셀러브릭스 에듀 운영팀'`,
+    `UPDATE users SET name='캠퍼스 관리자' WHERE id='demo-admin' AND name='에듀 관리자'`,
+  ]) {
+    try { await db.prepare(sql).run(); } catch (e) { console.warn('brand rename skipped', e); }
   }
   await run(`INSERT INTO settings (id,value) VALUES ('schema_version',?) ON CONFLICT(id) DO UPDATE SET value=excluded.value`, SCHEMA_VERSION);
   // wrangler `d1 migrations apply` 가 같은 변경을 다시 적용하지 않도록 기록 (테이블이 없으면 무시)

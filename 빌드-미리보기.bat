@@ -1,7 +1,7 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-title Sellerbricks EDU - build preview (127.0.0.1:3040)
+title Sellerbricks CAMPUS - build preview (127.0.0.1:3040)
 where node >nul 2>nul
 if errorlevel 1 goto nonode
 node scripts\local-run.mjs preview

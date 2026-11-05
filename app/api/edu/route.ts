@@ -24,6 +24,7 @@ const ACTIONS: Record<string, ['public' | 'user' | 'staff' | 'admin', Handler]> 
   profile: ['user', auth.profile as Handler],
   preferences: ['user', auth.preferences as Handler],
   password: ['user', auth.password as Handler],
+  withdraw: ['user', auth.withdraw as Handler],
   signoutOthers: ['user', auth.signoutOthers as Handler],
   notif_read: ['user', auth.notifRead as Handler],
   progress: ['user', learning.progress as Handler],
@@ -43,6 +44,9 @@ const ACTIONS: Record<string, ['public' | 'user' | 'staff' | 'admin', Handler]> 
   question: ['user', community.question as Handler],
   question_delete: ['user', community.questionDelete as Handler],
   vote: ['user', community.vote as Handler],
+  question_edit: ['user', community.questionEdit as Handler],
+  notice_read: ['user', community.noticeRead as Handler],
+  notif_clear: ['user', auth.notifClear as Handler],
   channel: ['user', community.channel as Handler],
   channel_remove: ['user', community.channelRemove as Handler],
   visit: ['user', community.visit as Handler],
@@ -66,6 +70,7 @@ const ACTIONS: Record<string, ['public' | 'user' | 'staff' | 'admin', Handler]> 
   assignment: ['staff', admin.assignment as Handler],
   assignment_delete: ['staff', admin.assignmentDelete as Handler],
   review_submission: ['staff', admin.reviewSubmission as Handler],
+  assignment_remind: ['staff', admin.assignmentRemind as Handler],
   ai: ['staff', ai as Handler],
   path: ['staff', admin.path as Handler],
   event: ['staff', admin.event as Handler],
@@ -107,7 +112,7 @@ export async function GET(req: Request) {
     }
     if (url.searchParams.get('export') === 'content') {
       if (user?.role !== 'admin') return out({ error: '최고 관리자 권한이 필요합니다.' }, 403);
-      return Response.json(await admin.exportContent(), { headers: { 'Content-Disposition': `attachment; filename="sellerbricks-edu-content-${new Date().toISOString().slice(0, 10)}.json"`, 'Cache-Control': 'private, no-store' } });
+      return Response.json(await admin.exportContent(), { headers: { 'Content-Disposition': `attachment; filename="sellerbricks-campus-content-${new Date().toISOString().slice(0, 10)}.json"`, 'Cache-Control': 'private, no-store' } });
     }
     const payload = JSON.stringify(await buildPayload(user));
     // 약한 ETag: 내용이 같으면 304 로 폴링 트래픽을 줄인다

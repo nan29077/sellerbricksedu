@@ -57,17 +57,22 @@ export async function member({ body, user }: AuthedCtx) {
   }
   return out({ ok: true });
 }
+/** 회원과 연관 데이터를 모두 삭제 (관리자 삭제·본인 탈퇴 공용) */
+export async function purgeUser(id: string) {
+  await run('DELETE FROM comments WHERE post_id IN (SELECT id FROM posts WHERE user_id=?)', id);
+  await run('DELETE FROM post_likes WHERE post_id IN (SELECT id FROM posts WHERE user_id=?)', id);
+  await batch(['sessions:user_id', 'user_profiles:user_id', 'progress:user_id', 'lesson_notes:user_id', 'learning_days:user_id', 'memberships:user_id', 'channels:user_id', 'channel_visits:user_id', 'channel_visits:target_id', 'notifications:user_id', 'submissions:user_id', 'reviews:user_id', 'question_votes:user_id', 'oauth_accounts:user_id', 'password_resets:user_id', 'certificates:user_id', 'messages:user_id', 'activity_log:user_id', 'quiz_attempts:user_id', 'event_rsvps:user_id', 'announcement_reads:user_id', 'comments:user_id', 'post_likes:user_id', 'posts:user_id', 'users:id'].map((t) => {
+    const [table, col] = t.split(':');
+    return stmt(`DELETE FROM ${table} WHERE ${col}=?`, id);
+  }));
+}
+
 export async function memberDelete({ body, user }: AuthedCtx) {
   const id = str(body.id, 100);
   if (id === user.id) throw new HttpError(400, '현재 계정은 삭제할 수 없습니다.');
   const target = await first<any>('SELECT role FROM users WHERE id=?', id);
   if (!target) throw new HttpError(404, '교육생을 찾을 수 없습니다.');
-  await run('DELETE FROM comments WHERE post_id IN (SELECT id FROM posts WHERE user_id=?)', id);
-  await run('DELETE FROM post_likes WHERE post_id IN (SELECT id FROM posts WHERE user_id=?)', id);
-  await batch(['sessions:user_id', 'user_profiles:user_id', 'progress:user_id', 'lesson_notes:user_id', 'learning_days:user_id', 'memberships:user_id', 'channels:user_id', 'channel_visits:user_id', 'channel_visits:target_id', 'notifications:user_id', 'submissions:user_id', 'reviews:user_id', 'question_votes:user_id', 'oauth_accounts:user_id', 'password_resets:user_id', 'certificates:user_id', 'messages:user_id', 'activity_log:user_id', 'quiz_attempts:user_id', 'event_rsvps:user_id', 'comments:user_id', 'post_likes:user_id', 'posts:user_id', 'users:id'].map((t) => {
-    const [table, col] = t.split(':');
-    return stmt(`DELETE FROM ${table} WHERE ${col}=?`, id);
-  }));
+  await purgeUser(id);
   await logActivity(user.id, 'member_delete', id);
   return out({ ok: true });
 }
@@ -242,7 +247,7 @@ export async function reply({ body, user }: AuthedCtx) {
   const id = str(body.id, 100), text = str(body.reply, 5000);
   const m = await first<any>('SELECT user_id, lesson_id FROM messages WHERE id=?', id);
   if (!m) throw new HttpError(404, '질문을 찾을 수 없습니다.');
-  await run('UPDATE messages SET reply=?, resolved=1 WHERE id=?', text, id);
+  await run("UPDATE messages SET reply=?, resolved=1, replied=CASE WHEN replied='' THEN ? ELSE replied END WHERE id=?", text, now(), id);
   const lesson = m.lesson_id ? await first<any>('SELECT title FROM lessons WHERE id=?', m.lesson_id) : null;
   if (text) await notify([m.user_id], 'reply', '질문에 답변이 등록되었습니다', lesson?.title || '학습 문의', m.lesson_id ? `/lesson/${m.lesson_id}` : '/learn/questions');
   await logActivity(user.id, 'reply', id);
@@ -278,7 +283,8 @@ export async function announcement({ body, user }: AuthedCtx) {
   return out({ ok: true });
 }
 export async function announcementDelete({ body }: AuthedCtx) {
-  await run('DELETE FROM announcements WHERE id=?', str(body.id, 100));
+  const id = str(body.id, 100);
+  await batch([stmt('DELETE FROM announcement_reads WHERE announcement_id=?', id), stmt('DELETE FROM announcements WHERE id=?', id)]);
   return out({ ok: true });
 }
 
@@ -298,6 +304,22 @@ export async function assignmentDelete({ body }: AuthedCtx) {
   await batch([stmt('DELETE FROM submissions WHERE assignment_id=?', id), stmt('DELETE FROM assignments WHERE id=?', id)]);
   return out({ ok: true });
 }
+/** 과제 미제출 교육생에게 리마인드 알림 (과정 진도를 시작한 승인 교육생 대상, cohortId로 좁힐 수 있음) */
+export async function assignmentRemind({ body, user }: AuthedCtx) {
+  const a = await first<any>('SELECT * FROM assignments WHERE id=?', str(body.id, 100));
+  if (!a) throw new HttpError(404, '과제를 찾을 수 없습니다.');
+  const cohortId = body.cohortId ? str(body.cohortId, 100) : '';
+  const targets = await all<{ id: string }>(
+    `SELECT users.id FROM users ${cohortId ? 'JOIN memberships ON memberships.user_id=users.id AND memberships.cohort_id=?' : ''}
+     WHERE users.status='active' AND users.role='student'
+       AND NOT EXISTS (SELECT 1 FROM submissions WHERE submissions.assignment_id=? AND submissions.user_id=users.id AND submissions.status!='revise')`,
+    ...(cohortId ? [cohortId, a.id] : [a.id]),
+  );
+  const due = a.due ? ` 마감일은 ${String(a.due).replace(/-/g, '.')}입니다.` : '';
+  await notify(targets.map((t) => t.id), 'assignment', `과제 제출 안내: ${a.title}`, `아직 제출하지 않은 실습 과제가 있어요.${due}`, '/learn/assignments');
+  await logActivity(user.id, 'nudge', `과제 리마인드 ${targets.length}명 · ${a.title}`);
+  return out({ ok: true, count: targets.length });
+}
 export async function reviewSubmission({ body, user }: AuthedCtx) {
   const id = str(body.id, 100);
   if (!['passed', 'revise', 'submitted'].includes(body.status)) throw new HttpError(400, '검토 상태를 확인해 주세요.');
@@ -312,17 +334,24 @@ export async function reviewSubmission({ body, user }: AuthedCtx) {
 
 // ───────── 설정 ─────────
 export async function settings({ body }: AuthedCtx) {
+  const pending: [string, string][] = [];
   for (const id of Object.keys(SETTING_DEFAULTS)) {
     if (body[id] === undefined) continue;
-    let v = str(body[id], 500);
+    let v = str(body[id], ['terms_text', 'privacy_text'].includes(id) ? 30000 : 500);
+    if (id === 'banner_text') v = v.slice(0, 200);
+    if (id === 'banner_tone') v = ['info', 'warn', 'good'].includes(v) ? v : 'info';
+    if (id === 'banner_link' && v && !/^(\/|https?:\/\/)/.test(v)) throw new HttpError(400, '배너 링크는 / 로 시작하는 내부 주소나 http(s) 주소만 입력할 수 있어요.');
+    if (id === 'policy_date' && v && !/^\d{4}-\d{2}-\d{2}$/.test(v)) throw new HttpError(400, '시행일은 YYYY-MM-DD 형식으로 입력해 주세요.');
     if (id === 'pass_score') v = String(Math.min(100, Math.max(1, num(v, 80) || 80)));
     if (id === 'watch_ratio') v = String(Math.min(100, Math.max(10, num(v, 90) || 90)));
     if (id === 'max_video_mb') v = String(Math.min(200, Math.max(5, num(v, 50) || 50)));
-    if (['auto_approve', 'oauth_auto_approve', 'demo_mode'].includes(id)) v = v === '1' ? '1' : '0';
+    if (['auto_approve', 'oauth_auto_approve', 'demo_mode', 'banner_on'].includes(id)) v = v === '1' ? '1' : '0';
     // 비밀 값은 빈 문자열이면 유지
     if (['kakao_secret', 'naver_secret', 'resend_key'].includes(id) && !v) continue;
-    await setSetting(id, v);
+    pending.push([id, v]);
   }
+  // 검증을 모두 통과한 뒤 한 번에 저장 (일부만 저장되는 일 방지)
+  for (const [id, v] of pending) await setSetting(id, v);
   if (body.ai_key) await setSetting('ai_key', str(body.ai_key, 500));
   for (const k of ['ai_key', 'kakao_secret', 'naver_secret', 'resend_key']) if (body['clear_' + k]) await run('DELETE FROM settings WHERE id=?', k);
   return out({ ok: true });
@@ -353,10 +382,18 @@ export async function event({ body, user }: AuthedCtx) {
   const link = str(body.link, 500);
   if (link && !/^https?:\/\//.test(link)) throw new HttpError(400, '세션 링크는 http(s):// 로 시작해야 합니다.');
   const cohortId = body.cohortId ? str(body.cohortId, 100) : null;
+  const replay = str(body.replay, 500);
+  if (replay && !/^https:\/\//.test(replay)) throw new HttpError(400, '다시보기 링크는 https:// 로 시작해야 합니다.');
   const id = body.id || uid();
   const isNew = !body.id;
-  await run('INSERT INTO events (id,title,description,starts,ends,link,location,cohort_id,capacity,created_by,created) VALUES (?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET title=excluded.title,description=excluded.description,starts=excluded.starts,ends=excluded.ends,link=excluded.link,location=excluded.location,cohort_id=excluded.cohort_id,capacity=excluded.capacity',
-    id, title, str(body.description, 5000), starts, str(body.ends, 30), link, str(body.location, 200), cohortId, Math.max(0, num(body.capacity, 0)), user.id, now());
+  const prev = isNew ? null : await first<{ replay: string }>('SELECT replay FROM events WHERE id=?', id);
+  await run('INSERT INTO events (id,title,description,starts,ends,link,location,cohort_id,capacity,created_by,created,replay) VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET title=excluded.title,description=excluded.description,starts=excluded.starts,ends=excluded.ends,link=excluded.link,location=excluded.location,cohort_id=excluded.cohort_id,capacity=excluded.capacity,replay=excluded.replay',
+    id, title, str(body.description, 5000), starts, str(body.ends, 30), link, str(body.location, 200), cohortId, Math.max(0, num(body.capacity, 0)), user.id, now(), replay);
+  // 다시보기 링크가 새로 등록되면 참석 신청자에게 알림
+  if (replay && !prev?.replay) {
+    const going = await all<{ user_id: string }>('SELECT user_id FROM event_rsvps WHERE event_id=?', id);
+    await notify(going.map((g) => g.user_id), 'system', `다시보기 등록: ${title}`, '참석한 라이브 세션의 다시보기가 올라왔어요.', '/learn/events');
+  }
   if (isNew && body.notify !== false) {
     const targets = await all<{ id: string }>(cohortId ? `SELECT users.id FROM users JOIN memberships ON memberships.user_id=users.id WHERE users.status='active' AND users.role='student' AND memberships.cohort_id=?` : `SELECT id FROM users WHERE status='active' AND role='student'`, ...(cohortId ? [cohortId] : []));
     await notify(targets.map((t) => t.id), 'system', `새 일정: ${title}`, `${starts.replace('T', ' ')} · 일정 메뉴에서 참석 신청하세요.`, '/learn/events');

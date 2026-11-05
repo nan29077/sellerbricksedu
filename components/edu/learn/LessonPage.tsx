@@ -123,7 +123,7 @@ export function LessonPage({ lesson }: { lesson: Lesson }) {
                       <div>
                         <div className="qa-meta"><b>{m.user_id === user.id ? '나' : m.name}</b><small>{relTime(m.created)}</small>{m.pinned ? <Pill tone="info">추천 질문</Pill> : null}{!m.public && <Pill>비공개</Pill>}{m.reply ? <Pill tone="good">답변 완료</Pill> : <Pill tone="warn">답변 대기</Pill>}</div>
                         <p className="note-text">{m.body}</p>
-                        {m.reply && <div className="reply"><b>에듀 관리자 답변</b><p>{m.reply}</p></div>}
+                        {m.reply && <div className="reply"><b>캠퍼스 관리자 답변</b><p>{m.reply}</p></div>}
                         <div className="qa-actions">
                           <button className={m.voted ? 'on' : ''} onClick={() => { patch((d) => ({ ...d, messages: d.messages.map((x) => x.id === m.id ? { ...x, voted: x.voted ? 0 : 1, votes: x.votes + (x.voted ? -1 : 1) } : x) })); act('vote', { id: m.id }, true); }} aria-pressed={!!m.voted}><ThumbsUp size={14} /> 저도 궁금해요 {m.votes > 0 && m.votes}</button>
                           {(m.user_id === user.id && !m.reply || admin) && <button onClick={() => perform('question_delete', { id: m.id }, '질문을 삭제했습니다.')}><Trash2 size={14} /> 삭제</button>}

@@ -1,5 +1,5 @@
 /**
- * 셀러브릭스 에듀 기본 커리큘럼 (v2)
+ * 셀러브릭스 캠퍼스 기본 커리큘럼 (v2)
  * 4단계 과정 × 3섹션 × 3~4강. 각 강의는 학습 목표·챕터·확인 문제·실습 자료를 가진다.
  * 관리자 화면에서 자유롭게 수정할 수 있으며, 시드는 비어 있는 항목만 채운다.
  */
@@ -14,7 +14,7 @@ const q = (question: string, options: string[], answer: number, explanation: str
 
 export const COURSES: SeedCourse[] = [
   {
-    id: 'start', title: '처음 시작하는 라이브 커머스', category: '입문', image: 1, position: 1, level: '입문', instructor: '셀러브릭스 에듀 운영팀',
+    id: 'start', title: '처음 시작하는 라이브 커머스', category: '입문', image: 1, position: 1, level: '입문', instructor: '셀러브릭스 캠퍼스 운영팀',
     description: '라이브 커머스가 무엇인지, 셀러브릭스에서 어떻게 판매가 이루어지는지 이해하고 첫 방송을 위한 준비를 시작하는 입문 과정',
     objectives: ['라이브 커머스의 판매 구조와 시장 흐름을 설명할 수 있다', '셀러브릭스 셀러 등록부터 상품 연동까지 스스로 설정한다', '나의 상품과 고객을 정의하고 첫 방송 준비 체크리스트를 작성한다'],
     sections: [
@@ -60,7 +60,7 @@ export const COURSES: SeedCourse[] = [
     ],
   },
   {
-    id: 'studio', title: '팔리는 방송의 준비 기술', category: '방송 준비', image: 2, position: 2, level: '초급', instructor: '셀러브릭스 에듀 운영팀',
+    id: 'studio', title: '팔리는 방송의 준비 기술', category: '방송 준비', image: 2, position: 2, level: '초급', instructor: '셀러브릭스 캠퍼스 운영팀',
     description: '스마트폰 하나로 시작하는 방송 환경 구성, 상품이 돋보이는 촬영과 조명, 30분 방송 스크립트와 리허설까지. 좋은 방송은 준비에서 시작됩니다.',
     objectives: ['스마트폰과 기본 장비로 안정적인 방송 환경을 구성한다', '상품 매력을 전달하는 조명·구도·시연 장면을 설계한다', '30분 방송 스크립트를 작성하고 리허설로 점검한다'],
     sections: [
@@ -100,7 +100,7 @@ export const COURSES: SeedCourse[] = [
     ],
   },
   {
-    id: 'selling', title: '고객의 마음을 여는 실전 판매', category: '실전 판매', image: 3, position: 3, level: '중급', instructor: '셀러브릭스 에듀 운영팀',
+    id: 'selling', title: '고객의 마음을 여는 실전 판매', category: '실전 판매', image: 3, position: 3, level: '중급', instructor: '셀러브릭스 캠퍼스 운영팀',
     description: '시선을 붙잡는 오프닝, 구매 이유로 바뀌는 상품 설명, 댓글 소통과 구매 안내 타이밍까지. 나만의 진행 스타일을 완성합니다.',
     objectives: ['첫 30초 오프닝과 자기소개 공식을 활용한다', '상품 특징을 고객 언어의 구매 이유로 전환한다', '댓글 응대·혜택 안내·마무리로 구매 전환 흐름을 만든다'],
     sections: [
@@ -143,7 +143,7 @@ export const COURSES: SeedCourse[] = [
     ],
   },
   {
-    id: 'operation', title: '꾸준히 성장하는 셀러의 운영법', category: '운영·정산', image: 2, position: 4, level: '중급', instructor: '셀러브릭스 에듀 운영팀',
+    id: 'operation', title: '꾸준히 성장하는 셀러의 운영법', category: '운영·정산', image: 2, position: 4, level: '중급', instructor: '셀러브릭스 캠퍼스 운영팀',
     description: '주문 처리, 고객 응대, 정산과 수수료, 성과 데이터와 콘텐츠 운영까지. 한 번의 방송을 오래가는 판매로 바꾸는 운영 과정',
     objectives: ['주문·배송·교환 흐름을 지연 없이 처리한다', '정산 내역과 수수료를 읽고 수익을 계산한다', '방송 성과 데이터와 콘텐츠 운영으로 다음 방송을 개선한다'],
     sections: [
@@ -187,7 +187,7 @@ export const COURSES: SeedCourse[] = [
   },
   // ───────────────────────── v3 추가 과정 ─────────────────────────
   {
-    id: 'sourcing', title: '팔리는 상품을 찾는 소싱과 기획', category: '상품 기획', image: 2, position: 5, level: '초급', instructor: '셀러브릭스 에듀 운영팀',
+    id: 'sourcing', title: '팔리는 상품을 찾는 소싱과 기획', category: '상품 기획', image: 2, position: 5, level: '초급', instructor: '셀러브릭스 캠퍼스 운영팀',
     description: '시장에서 잘 팔리는 상품을 찾고, 공급처를 확보하고, 라이브에 맞는 구성과 가격을 설계하는 상품 기획 과정',
     objectives: ['카테고리별 수요와 경쟁을 조사해 후보 상품을 고른다', '공급처 확보와 샘플 검증 절차를 수행한다', '라이브 전용 구성·가격·혜택을 설계한다'],
     sections: [
@@ -204,7 +204,7 @@ export const COURSES: SeedCourse[] = [
     ],
   },
   {
-    id: 'marketing', title: '시청자를 모으는 SNS와 마케팅', category: '마케팅·SNS', image: 3, position: 6, level: '초급', instructor: '셀러브릭스 에듀 운영팀',
+    id: 'marketing', title: '시청자를 모으는 SNS와 마케팅', category: '마케팅·SNS', image: 3, position: 6, level: '초급', instructor: '셀러브릭스 캠퍼스 운영팀',
     description: '방송 전 예고로 시청자를 모으고, 숏폼·SNS·메시지로 방송 밖에서도 고객과 연결되는 채널 운영 과정',
     objectives: ['채널별 역할을 정하고 주간 콘텐츠 캘린더를 운영한다', '방송 예고·리마인드로 시청자 유입을 만든다', '숏폼 하이라이트와 메시지로 재방문을 설계한다'],
     sections: [
@@ -221,7 +221,7 @@ export const COURSES: SeedCourse[] = [
     ],
   },
   {
-    id: 'crm', title: '단골을 만드는 고객 관리', category: '고객 관리', image: 1, position: 7, level: '중급', instructor: '셀러브릭스 에듀 운영팀',
+    id: 'crm', title: '단골을 만드는 고객 관리', category: '고객 관리', image: 1, position: 7, level: '중급', instructor: '셀러브릭스 캠퍼스 운영팀',
     description: '첫 구매 고객을 단골로 만드는 사후 응대, 고객 분류와 혜택 설계, VIP 커뮤니티 운영까지 — 재구매를 만드는 고객 관리 과정',
     objectives: ['구매 후 접점별 응대 시나리오를 운영한다', '고객을 분류하고 등급별 혜택을 설계한다', '불만 고객을 단골로 전환하는 응대를 수행한다'],
     sections: [
@@ -238,7 +238,7 @@ export const COURSES: SeedCourse[] = [
     ],
   },
   {
-    id: 'branding', title: '기억되는 셀러 브랜딩', category: '브랜딩', image: 2, position: 8, level: '중급', instructor: '셀러브릭스 에듀 운영팀',
+    id: 'branding', title: '기억되는 셀러 브랜딩', category: '브랜딩', image: 2, position: 8, level: '중급', instructor: '셀러브릭스 캠퍼스 운영팀',
     description: '나만의 셀러 캐릭터, 말투, 비주얼, 스토리를 정립해 "그 셀러의 방송"으로 기억되게 만드는 브랜딩 과정',
     objectives: ['셀러 캐릭터와 핵심 메시지를 정의한다', '방송·SNS 전반에 일관된 비주얼과 말투를 적용한다', '브랜드 스토리를 방송 오프닝과 상품 소개에 녹인다'],
     sections: [
@@ -255,7 +255,7 @@ export const COURSES: SeedCourse[] = [
     ],
   },
   {
-    id: 'analytics', title: '데이터로 성장하는 셀러', category: '데이터 분석', image: 3, position: 9, level: '심화', instructor: '셀러브릭스 에듀 운영팀',
+    id: 'analytics', title: '데이터로 성장하는 셀러', category: '데이터 분석', image: 3, position: 9, level: '심화', instructor: '셀러브릭스 캠퍼스 운영팀',
     description: '시청·전환·매출 지표를 대시보드로 정리하고, A/B 실험과 복기 루프로 방송마다 개선하는 데이터 기반 성장 과정',
     objectives: ['핵심 지표 체계를 세우고 방송별 대시보드를 운영한다', '가설-실험-검증의 A/B 실험을 설계한다', '월간 리뷰로 성장 전략을 조정한다'],
     sections: [
@@ -272,7 +272,7 @@ export const COURSES: SeedCourse[] = [
     ],
   },
   {
-    id: 'legal', title: '신뢰를 지키는 법규와 안전', category: '법규·안전', image: 1, position: 10, level: '초급', instructor: '셀러브릭스 에듀 운영팀',
+    id: 'legal', title: '신뢰를 지키는 법규와 안전', category: '법규·안전', image: 1, position: 10, level: '초급', instructor: '셀러브릭스 캠퍼스 운영팀',
     description: '표시광고법, 전자상거래법, 개인정보보호, 저작권·초상권 — 방송과 판매에서 반드시 지켜야 할 기준을 사례 중심으로 정리한 과정 (법률 자문이 아닌 교육 안내)',
     objectives: ['표시·광고에서 피해야 할 표현과 근거 자료 원칙을 안다', '청약철회·환불 등 전자상거래 기본 의무를 이행한다', '저작권·초상권·개인정보 리스크를 예방한다'],
     sections: [

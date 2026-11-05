@@ -69,7 +69,7 @@ export function coursePct(course: Course | undefined, lessons: Lesson[], progres
 }
 
 export interface Badge { id: string; name: string; desc: string; earned: boolean; icon: string }
-export function badges(progress: Progress[], days: LearningDay[], certificates: number, notesCount: number, questions: number): Badge[] {
+export function badges(progress: Progress[], days: LearningDay[], certificates: number, notesCount: number, questions: number, extra: { passed?: number; posts?: number; events?: number } = {}): Badge[] {
   const done = progress.filter((p) => p.complete).length;
   const watched = progress.reduce((s, p) => s + p.watched, 0);
   const st = streak(days);
@@ -85,6 +85,12 @@ export function badges(progress: Progress[], days: LearningDay[], certificates: 
     { id: 'note', name: '기록하는 습관', desc: '학습 노트 5개', earned: notesCount >= 5, icon: '📝' },
     { id: 'ask', name: '질문하는 셀러', desc: '질문 1개 이상', earned: questions >= 1, icon: '💬' },
     { id: 'cert', name: '수료', desc: '과정 1개 수료', earned: certificates >= 1, icon: '🎓' },
+    { id: 'twenty', name: '실력파 셀러', desc: '강의 20개 완료', earned: done >= 20, icon: '🧭' },
+    { id: 'streak30', name: '한 달 루틴', desc: '30일 연속 학습', earned: st >= 30, icon: '🌕' },
+    { id: 'assignment', name: '실전 적용', desc: '과제 1개 통과', earned: (extra.passed || 0) >= 1, icon: '🛠️' },
+    { id: 'lounge', name: '나눔의 시작', desc: '라운지에 첫 글 작성', earned: (extra.posts || 0) >= 1, icon: '🤝' },
+    { id: 'live', name: '라이브 참여', desc: '라이브 세션 참석 신청', earned: (extra.events || 0) >= 1, icon: '🎥' },
+    { id: 'certs3', name: '마스터 셀러', desc: '과정 3개 수료', earned: certificates >= 3, icon: '👑' },
   ];
 }
 

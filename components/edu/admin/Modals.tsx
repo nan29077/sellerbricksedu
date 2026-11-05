@@ -4,6 +4,22 @@ import { Plus, Upload, Trash2, Sparkles, Copy } from 'lucide-react';
 import { useEdu } from '../../../lib/edu-store';
 import { CATEGORIES, LEVELS, PLATFORMS, platformName, fmt } from '../../../lib/learning';
 import { Button, Modal, Pill } from '../ui';
+import { localGet, localPut } from '../../../lib/insights';
+
+const REPLY_KEY = 'sbc-reply-templates';
+const DEFAULT_TEMPLATES = ['좋은 질문 감사합니다! 강의 노트의 체크리스트를 먼저 확인해 보시고, 그래도 막히는 부분이 있으면 다시 질문 남겨주세요.', '말씀하신 상황은 방송 전 리허설로 대부분 해결돼요. 10분 정도 실제 순서대로 연습해 보시는 걸 추천드립니다.', '이 부분은 다음 라이브 Q&A 세션에서 자세히 다룰 예정이에요. 일정 메뉴에서 참석 신청해 주세요.'];
+
+/** 자주 쓰는 답변을 저장해 두고 한 번에 넣는다 (관리자 브라우저에 저장) */
+function ReplyTemplates({ value, onPick }: { value: string; onPick: (t: string) => void }) {
+  const [list, setList] = useState<string[]>(() => localGet(REPLY_KEY, DEFAULT_TEMPLATES));
+  const save = (next: string[]) => { setList(next); localPut(REPLY_KEY, next); };
+  return (
+    <div className="reply-templates">
+      <div className="between"><b>자주 쓰는 답변</b>{value.trim() && !list.includes(value.trim()) && <button type="button" className="text-link" onClick={() => save([...list, value.trim()].slice(-12))}><Plus size={13} /> 지금 답변을 템플릿으로 저장</button>}</div>
+      <ul>{list.map((t, i) => <li key={i}><button type="button" onClick={() => onPick(value.trim() ? value.trimEnd() + '\n\n' + t : t)} title="답변에 넣기">{t}</button><button type="button" className="icon-button" aria-label="템플릿 삭제" onClick={() => save(list.filter((_, j) => j !== i))}><Trash2 size={13} /></button></li>)}</ul>
+    </div>
+  );
+}
 
 const TITLES: Record<string, string> = { ai_chapters: 'AI로 챕터 나누기', post: '라운지 글쓰기', event: '라이브 세션·일정', path: '학습 경로', faq: 'FAQ', invite_bulk: '교육생 CSV 일괄 등록', content_import: '콘텐츠 JSON 가져오기', nudge: '교육생에게 알림 보내기', course: '교육 과정 편집', lesson: '영상 강의와 확인 문제', reply: '질문 답변', cohort: '교육 기수 편집', channel: '나의 SNS 채널', progress: '학습 현황', announcement: '공지 작성', assignment: '과제 편집', review_submission: '과제 검토', import: '강의 일괄 등록', invite: '교육생 직접 등록', ai: 'AI로 확인 문제 생성' };
 
@@ -104,7 +120,7 @@ export function EduModals() {
               <label>대표 이미지<select value={editor.image} onChange={(e) => set('image', e.target.value)}><option value="1">라이브 셀러 스튜디오</option><option value="2">상품 방송 준비</option><option value="3">실전 방송 스튜디오</option></select></label>
             </div>
             <label>학습 목표 (줄바꿈으로 구분)<textarea rows={3} value={editor.objectives || ''} onChange={(e) => set('objectives', e.target.value)} placeholder="이 과정을 마치면 할 수 있는 것" /></label>
-            <label>강사·운영 담당<input value={editor.instructor || ''} onChange={(e) => set('instructor', e.target.value)} placeholder="셀러브릭스 에듀 운영팀" /></label>
+            <label>강사·운영 담당<input value={editor.instructor || ''} onChange={(e) => set('instructor', e.target.value)} placeholder="셀러브릭스 캠퍼스 운영팀" /></label>
             <label className="check-label"><input type="checkbox" checked={!!editor.published} onChange={(e) => set('published', e.target.checked ? 1 : 0)} /><span>교육생에게 과정 공개</span></label>
           </>
         )}
@@ -161,6 +177,7 @@ export function EduModals() {
               <label>세션 링크 (Zoom·유튜브 등)<input type="url" value={editor.link} onChange={(e) => set('link', e.target.value)} placeholder="https://" /></label>
               <label>장소<input value={editor.location} onChange={(e) => set('location', e.target.value)} placeholder="온라인" /></label>
             </div>
+            <label>다시보기 링크 (선택)<input type="url" value={editor.replay || ''} onChange={(e) => set('replay', e.target.value)} placeholder="https:// 녹화본 링크 — 등록하면 참석 신청자에게 알림" /></label>
             <div className="form-two">
               <label>대상<select value={editor.cohortId || ''} onChange={(e) => set('cohortId', e.target.value)}><option value="">전체 교육생</option>{(data?.cohorts ?? []).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
               <label>정원 (0 = 제한 없음)<input type="number" min={0} value={editor.capacity} onChange={(e) => set('capacity', e.target.value)} /></label>
@@ -201,7 +218,11 @@ export function EduModals() {
             <input type="file" accept="application/json" onChange={(e) => { const f = e.target.files?.[0]; if (!f) return; f.text().then((t) => set('data', t)); }} />
           </>
         )}
-        {modal.type === 'reply' && <label>답변 내용<textarea required rows={7} value={editor.reply} onChange={(e) => set('reply', e.target.value)} placeholder="교육생에게 전달될 답변을 작성하세요. 저장하면 알림이 전송됩니다." /></label>}
+        {modal.type === 'reply' && <>
+          {editor.question && <div className="reply-question"><small>{editor.asker} 님의 질문</small><p className="note-text">{editor.question}</p></div>}
+          <label>답변 내용<textarea required rows={7} value={editor.reply} onChange={(e) => set('reply', e.target.value)} placeholder="교육생에게 전달될 답변을 작성하세요. 저장하면 알림이 전송됩니다." /></label>
+          <ReplyTemplates value={editor.reply || ''} onPick={(t) => set('reply', t)} />
+        </>}
 
         {modal.type === 'announcement' && (
           <>

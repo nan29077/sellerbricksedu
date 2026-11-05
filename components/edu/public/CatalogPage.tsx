@@ -11,9 +11,12 @@ export function CatalogPage({ learning = false }: { learning?: boolean }) {
   const { courses, lessons, ls, pct, pfor, go, data } = useEdu();
   const [category, setCategory] = useState('전체');
   const [search, setSearch] = useState('');
+  const [status, setStatus] = useState<'all' | 'progress' | 'todo' | 'done'>('all');
   const q = search.trim();
+  const stateOf = (id: string) => { const v = pct(id); return v >= 100 ? 'done' : v > 0 ? 'progress' : 'todo'; };
 
-  const matches = useMemo(() => courses.filter((c) => !q || c.title.includes(q) || c.description.includes(q) || c.category.includes(q) || ls(c.id).some((l) => l.title.includes(q) || l.section.includes(q))), [courses, q, ls]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const matches = useMemo(() => courses.filter((c) => (!learning || status === 'all' || stateOf(c.id) === status) && (!q || c.title.includes(q) || c.description.includes(q) || c.category.includes(q) || ls(c.id).some((l) => l.title.includes(q) || l.section.includes(q)))), [courses, q, ls, learning, status, pct]);
   const counts = useMemo(() => Object.fromEntries(CATEGORY_META.map((m) => [m.name, matches.filter((c) => c.category === m.name).length])), [matches]);
   const groups = CATEGORY_META.map((m) => ({ ...m, items: matches.filter((c) => c.category === m.name).sort((a, b) => a.position - b.position) })).filter((g) => g.items.length);
   const shown = category === '전체' ? groups : groups.filter((g) => g.name === category);
@@ -31,6 +34,16 @@ export function CatalogPage({ learning = false }: { learning?: boolean }) {
         <div className="catalog-summary">
           {inProgress.length > 0 && <div className="panel"><span className="eyebrow">학습 중</span><h3>{inProgress.length}개 과정 진행 중</h3><div className="summary-list">{inProgress.slice(0, 3).map((c) => { const next = ls(c.id).find((l) => !pfor(l.id).complete); return <button key={c.id} onClick={() => go(next ? '/lesson/' + next.id : '/course/' + c.id)}><b>{c.title}</b><span>{pct(c.id)}%</span><ChevronRight size={15} /></button>; })}</div></div>}
           {nextCourse && <div className="panel purple-panel compact"><Sparkles size={22} /><span className="eyebrow">다음 추천 과정</span><h3>{nextCourse.title}</h3><p>{nextCourse.description}</p><button className="button secondary small" onClick={() => go('/course/' + nextCourse.id)}>과정 보기</button></div>}
+        </div>
+      )}
+      {learning && (
+        <div className="filter-row secondary status-row">
+          <div className="seg" role="tablist" aria-label="학습 상태">
+            {([['all', '전체', courses.length], ['progress', '학습 중', courses.filter((c) => stateOf(c.id) === 'progress').length], ['todo', '시작 전', courses.filter((c) => stateOf(c.id) === 'todo').length], ['done', '완료', courses.filter((c) => stateOf(c.id) === 'done').length]] as const).map(([k, n, cnt]) => (
+              <button key={k} role="tab" aria-selected={status === k} className={status === k ? 'selected' : ''} onClick={() => setStatus(k)}>{n} <small>{cnt}</small></button>
+            ))}
+          </div>
+          <span className="small-muted">전체 진도 {lessons.length ? Math.round((lessons.filter((l) => pfor(l.id).complete).length / lessons.length) * 100) : 0}% · 완료 {lessons.filter((l) => pfor(l.id).complete).length} / {lessons.length}강</span>
         </div>
       )}
       <div className="filter-row">
@@ -53,7 +66,7 @@ export function CatalogPage({ learning = false }: { learning?: boolean }) {
             <div className={'course-grid ' + (learning ? 'portal-courses' : '')}>{g.items.map((c) => <CourseCard key={c.id} course={c} learning={learning} />)}</div>
           </section>
         );
-      }) : <Empty title="조건에 맞는 과정이 없어요" description="다른 키워드나 카테고리를 선택해 주세요." />}
+      }) : <Empty title="조건에 맞는 과정이 없어요" description={learning && status !== 'all' ? '다른 학습 상태를 선택해 보세요.' : '다른 키워드나 카테고리를 선택해 주세요.'} />}
     </main>
   );
 }

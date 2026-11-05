@@ -3,8 +3,9 @@ import { Menu, X } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useEdu } from '../../../lib/edu-store';
 import { Button, Logo } from '../ui';
+import { SiteBanner } from './SiteBanner';
 
-const NAV: [string, string][] = [['/', '에듀 홈'], ['/courses', '교육 과정'], ['/guide', '학습 가이드'], ['/notices', '공지사항']];
+const NAV: [string, string][] = [['/', '캠퍼스 홈'], ['/courses', '교육 과정'], ['/guide', '학습 가이드'], ['/notices', '공지사항']];
 
 export function PublicHeader() {
   const { path, go, user, admin, mobile, setMobile } = useEdu();
@@ -42,7 +43,8 @@ export function Footer() {
         <div>
           <Logo />
           <p>라이브 커머스 셀러의 시작과 성장을 함께합니다.</p>
-          <small>© 2026 Sellerbricks Edu. All rights reserved.</small>
+          <div className="footer-legal"><button onClick={() => go('/terms')}>이용약관</button><button className="strong" onClick={() => go('/privacy')}>개인정보처리방침</button></div>
+          <small>© 2026 Sellerbricks Campus. All rights reserved.</small>
         </div>
         <div>
           <b>셀러 학습 지원</b>
@@ -63,6 +65,7 @@ export function Footer() {
 export function PublicLayout({ children, className = '' }: { children: ReactNode; className?: string }) {
   return (
     <div className={className}>
+      <SiteBanner />
       <PublicHeader />
       {children}
       <Footer />
@@ -74,6 +77,7 @@ export function PublicLayout({ children, className = '' }: { children: ReactNode
 export function AuthLayout({ children }: { children: ReactNode }) {
   return (
     <div className="auth-layout">
+      <SiteBanner />
       {children}
       <Footer />
     </div>

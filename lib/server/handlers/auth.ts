@@ -4,6 +4,9 @@ import { createSession, destroySession, encodePassword, verifyPassword, checkRat
 import { notify, notifyAdmins, logActivity } from '../notify';
 import { sendMail } from '../mail';
 import type { Ctx } from './types';
+import { purgeUser } from './admin';
+import { SESSION_COOKIE } from '../auth';
+import { setCookie } from '../http';
 
 const EMAIL = /^\S+@\S+\.\S+$/;
 
@@ -12,7 +15,7 @@ export async function demo({ req, body, settings }: Ctx) {
   if (!['admin', 'student'].includes(body.role)) throw new HttpError(400, '잘못된 계정입니다.');
   await ipLimit(req, 'demo', 100);
   const id = 'demo-' + body.role;
-  await run('INSERT OR IGNORE INTO users (id,email,name,role,status,created) VALUES (?,?,?,?,?,?)', id, id + '@sellerbricks.test', body.role === 'admin' ? '에듀 관리자' : '김셀러', body.role, 'active', now());
+  await run('INSERT OR IGNORE INTO users (id,email,name,role,status,created) VALUES (?,?,?,?,?,?)', id, id + '@sellerbricks.test', body.role === 'admin' ? '캠퍼스 관리자' : '김셀러', body.role, 'active', now());
   if (body.role === 'student') await run("INSERT OR IGNORE INTO memberships (user_id,cohort_id) VALUES (?,'cohort-1')", id);
   const u = await first<any>('SELECT * FROM users WHERE id=?', id);
   if (u.status !== 'active') throw new HttpError(403, '체험 계정이 중지되어 있습니다.');
@@ -26,6 +29,7 @@ export async function register({ req, body, settings }: Ctx) {
   const name = str(body.name, 30);
   const password = String(body.password || '');
   if (!EMAIL.test(email) || password.length < 10 || password.length > 128 || name.length < 2) throw new HttpError(400, '이름(2자 이상), 이메일과 10자 이상의 비밀번호를 입력해 주세요.');
+  if (body.agree !== true) throw new HttpError(400, '이용약관과 개인정보 수집·이용에 동의해 주세요.');
   const id = uid();
   const auto = settings.auto_approve === '1';
   try {
@@ -36,6 +40,7 @@ export async function register({ req, body, settings }: Ctx) {
   } catch {
     throw new HttpError(400, '이미 등록된 이메일입니다.');
   }
+  await logActivity(id, 'consent', '이용약관·개인정보 수집·이용·만 14세 이상 동의');
   await notifyAdmins('approval', auto ? '새 교육생이 가입했습니다' : '승인 대기 교육생이 있습니다', `${name} (${email})`, '/admin/members');
   return out({ ok: true, message: auto ? '가입이 완료되었습니다. 바로 로그인해 주세요.' : '가입 신청이 완료되었습니다. 관리자가 셀러 자격을 확인한 후 승인하면 로그인할 수 있습니다.' });
 }
@@ -73,7 +78,7 @@ export async function forgot({ req, body, settings }: Ctx) {
     stmt('INSERT INTO password_resets (token,user_id,expires,created) VALUES (?,?,?,?)', token, u.id, Date.now() + 3600000, now()),
   ]);
   const link = `${siteUrl(req)}/reset/${token}`;
-  const mailed = await sendMail(settings, email, '[셀러브릭스 에듀] 비밀번호 재설정', `${u.name}님, 아래 링크에서 1시간 내에 비밀번호를 다시 설정해 주세요.\n\n${link}\n\n요청하지 않았다면 이 메일을 무시해 주세요.`);
+  const mailed = await sendMail(settings, email, '[셀러브릭스 캠퍼스] 비밀번호 재설정', `${u.name}님, 아래 링크에서 1시간 내에 비밀번호를 다시 설정해 주세요.\n\n${link}\n\n요청하지 않았다면 이 메일을 무시해 주세요.`);
   if (!mailed) await notifyAdmins('system', '비밀번호 재설정 요청', `${u.name}님이 재설정을 요청했습니다. 교육생 관리에서 링크를 전달해 주세요.`, '/admin/members');
   return out(generic);
 }
@@ -136,9 +141,35 @@ export async function signoutOthers({ req, user }: Ctx & { user: SessionUser }) 
   return out({ ok: true });
 }
 
+/** 회원 탈퇴: 본인 확인 후 계정과 학습 기록·게시물을 즉시 삭제 */
+export async function withdraw({ req, body, user }: Ctx & { user: SessionUser }) {
+  if (user.id.startsWith('demo-')) throw new HttpError(400, '체험 계정은 탈퇴할 수 없습니다.');
+  const account = await first<any>('SELECT password,email,role FROM users WHERE id=?', user.id);
+  if (!account) throw new HttpError(404, '계정을 찾을 수 없습니다.');
+  if (account.password) {
+    if (!(await verifyPassword(account.password, String(body.password || '')))) throw new HttpError(400, '비밀번호를 확인해 주세요.');
+  } else if (str(body.confirm, 10) !== '탈퇴') {
+    throw new HttpError(400, "확인을 위해 '탈퇴'를 입력해 주세요.");
+  }
+  if (account.role === 'admin') {
+    const others = await first<{ n: number }>("SELECT COUNT(*) AS n FROM users WHERE role='admin' AND status='active' AND id!=? AND id NOT LIKE 'demo-%'", user.id);
+    if (!others?.n) throw new HttpError(400, '마지막 최고 관리자는 탈퇴할 수 없습니다. 다른 최고 관리자를 먼저 지정해 주세요.');
+  }
+  await purgeUser(user.id);
+  await run('DELETE FROM login_attempts WHERE key=?', 'email:' + account.email);
+  await notifyAdmins('system', '회원 탈퇴', '교육생 1명이 탈퇴하여 계정과 학습 기록이 삭제되었습니다.', '/admin/members');
+  return out({ ok: true }, 200, { 'Set-Cookie': setCookie(SESSION_COOKIE, '', 0, req) });
+}
+
 export async function notifRead({ body, user }: Ctx & { user: SessionUser }) {
   if (body.all) await run('UPDATE notifications SET read=1 WHERE user_id=?', user.id);
   else await run('UPDATE notifications SET read=1 WHERE user_id=? AND id=?', user.id, str(body.id, 100));
+  return out({ ok: true });
+}
+
+/** 읽은 알림 비우기 */
+export async function notifClear({ user }: Ctx & { user: SessionUser }) {
+  await run('DELETE FROM notifications WHERE user_id=? AND read=1', user.id);
   return out({ ok: true });
 }
 

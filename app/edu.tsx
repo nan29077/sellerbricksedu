@@ -2,13 +2,14 @@
 import { EduProvider, useEdu } from '../lib/edu-store';
 import MainIntroduction from './main-introduction';
 import AccountSettings from './account-settings';
+import { WithdrawSection } from '../components/edu/learn/Withdraw';
 import { Button, Empty, ErrorBoundary, Logo, PageHead, Toast } from '../components/edu/ui';
 import { PublicLayout, AuthLayout } from '../components/edu/shell/PublicLayout';
 import { PortalLayout } from '../components/edu/shell/PortalLayout';
 import { LoginPage, ResetPage } from '../components/edu/public/LoginPage';
 import { CatalogPage } from '../components/edu/public/CatalogPage';
 import { CourseDetailPage } from '../components/edu/public/CourseDetailPage';
-import { InfoPage, VerifyPage } from '../components/edu/public/InfoPages';
+import { InfoPage, PolicyPage, VerifyPage } from '../components/edu/public/InfoPages';
 import { LessonPage } from '../components/edu/learn/LessonPage';
 import { Dashboard } from '../components/edu/learn/Dashboard';
 import { SavedPage, AchievementsPage, CertificatesPage, QuestionsPage, NoticesPage, AssignmentsPage } from '../components/edu/learn/Pages';
@@ -35,6 +36,7 @@ function Router() {
   if (path === '/courses') return <PublicLayout><CatalogPage /></PublicLayout>;
   if (seg[0] === 'course' && seg[1]) return <PublicLayout><CourseDetailPage id={decodeURIComponent(seg[1])} /></PublicLayout>;
   if (path === '/guide' || path === '/notices' || path === '/faq') return <PublicLayout><InfoPage kind={seg[0] as any} /></PublicLayout>;
+  if (path === '/terms' || path === '/privacy') return <PublicLayout><PolicyPage kind={seg[0] as 'terms' | 'privacy'} /></PublicLayout>;
 
   const lesson = seg[0] === 'lesson' ? lessons.find((l) => l.id === decodeURIComponent(seg[1] || '')) : undefined;
   const protectedPath = seg[0] === 'learn' || seg[0] === 'admin' || seg[0] === 'lesson';
@@ -70,7 +72,7 @@ function Router() {
     else if (p === '/admin/paths') body = <PathsPage adminView />;
     else if (p === '/admin/faqs') body = <AdminFaqs />;
     else if (p === '/admin/quiz') body = <AdminQuiz />;
-    else if (['/learn/profile', '/admin/profile', '/learn/settings', '/admin/account-settings'].includes(p)) body = <><PageHead title="계정 설정" sub="프로필과 계정 보안을 한곳에서 관리하세요." /><AccountSettings key={user.id} user={user} busy={busy} save={perform} /></>;
+    else if (['/learn/profile', '/admin/profile', '/learn/settings', '/admin/account-settings'].includes(p)) body = <><PageHead title="계정 설정" sub="프로필과 계정 보안을 한곳에서 관리하세요." /><AccountSettings key={user.id} user={user} busy={busy} save={perform} /><WithdrawSection /></>;
     else if (p === '/admin') body = <AdminDashboard />;
     else if (p === '/admin/courses') body = <AdminCourses />;
     else if (p.startsWith('/admin/videos')) body = <AdminLessons />;

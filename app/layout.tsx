@@ -5,9 +5,10 @@ import "./globals.css";
 import "./refinement.css";
 import "./introduction.css";
 import "./features.css";
+import "./features-v3.css";
 import "./introduction-enhanced.css";
 
-const shareTitle = "첫 라이브의 자신감 | 셀러브릭스 에듀";
+const shareTitle = "첫 라이브의 자신감 | 셀러브릭스 캠퍼스";
 const shareDescription = "처음 시작하는 셀러를 위한 라이브 커머스 교육. 준비부터 실전까지, 나의 속도로 배우고 성장하세요.";
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -25,10 +26,10 @@ export async function generateMetadata(): Promise<Metadata> {
     openGraph: {
       type: "website",
       locale: "ko_KR",
-      siteName: "셀러브릭스 에듀",
+      siteName: "셀러브릭스 캠퍼스",
       title: shareTitle,
       description: shareDescription,
-      images: [{ url: "/images/share-card.jpg", width: 1200, height: 630, alt: "첫 라이브의 자신감, 여기서 시작하세요. 셀러브릭스 에듀", type: "image/jpeg" }],
+      images: [{ url: "/images/share-card.jpg", width: 1200, height: 630, alt: "첫 라이브의 자신감, 여기서 시작하세요. 셀러브릭스 캠퍼스", type: "image/jpeg" }],
     },
     twitter: {
       card: "summary_large_image",

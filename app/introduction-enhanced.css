@@ -151,3 +151,7 @@
 @media(max-width:760px){.introduction-page .intro-hero-photo{top:auto;bottom:0;height:72%;object-position:76% center}.introduction-page .intro-hero-gradient{background:linear-gradient(180deg,#1d3028 0%,#1d3028 24%,#1d3028ef 39%,#1d30288c 63%,#1d302878 100%)}.introduction-page .intro-hero-copy{justify-content:flex-start;padding-top:66px}.introduction-page .intro-hero .intro-kicker{margin-bottom:18px}}
 
 @media(max-width:460px){.intro-highlights-inner{grid-template-columns:1fr}.intro-highlights-label{grid-column:auto}.intro-highlight,.intro-highlight:nth-child(odd){display:grid;grid-template-columns:28px 1fr;column-gap:8px;align-items:baseline;padding:12px 0;border-left:0}.intro-highlight>span{grid-row:1/3;margin:0}.intro-highlight strong{grid-column:2}.introduction-page .intro-highlight p{grid-column:2}}
+
+/* 브랜드 배지 CAMPUS — 글자 길이에 맞춰 로고 폭 자동 */
+.brand,.footer-inner .brand,.sidebar .brand,.login-form>.brand,.introduction-page .brand{width:auto!important}
+.brand .brand-edu-label{letter-spacing:.6px}

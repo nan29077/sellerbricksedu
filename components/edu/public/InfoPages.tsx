@@ -1,9 +1,10 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Plus, Pin, ShieldCheck, Search } from 'lucide-react';
 import { useEdu } from '../../../lib/edu-store';
 import { fmtDate, fmtShort } from '../../../lib/learning';
 import { Button, Empty, Logo, PageHead, Pill } from '../ui';
+import { DEFAULT_PRIVACY, DEFAULT_TERMS, POLICY_EFFECTIVE, fillPolicy } from '../../../lib/policies';
 
 const GUIDE = [
   ['01', '교육 가입 신청', '셀러브릭스 가입 셀러는 이메일 또는 카카오·네이버 계정으로 교육 가입을 신청합니다. 관리자가 셀러 자격을 확인하고 교육 기수를 배정합니다.'],
@@ -26,7 +27,7 @@ const FAQ = [
 export function InfoPage({ kind }: { kind: 'guide' | 'notices' | 'faq' }) {
   const { data, go } = useEdu();
   const [open, setOpen] = useState<string | null>(null);
-  const titles = { guide: ['셀러브릭스 에듀 학습 가이드', '나의 첫 학습부터 수료까지, 차근차근 안내해 드려요.'], notices: ['에듀 소식', '교육과 학습에 관한 새로운 안내를 확인하세요.'], faq: ['자주 묻는 질문', '시작하기 전에 궁금한 내용을 확인하세요.'] }[kind];
+  const titles = { guide: ['셀러브릭스 캠퍼스 학습 가이드', '나의 첫 학습부터 수료까지, 차근차근 안내해 드려요.'], notices: ['캠퍼스 소식', '교육과 학습에 관한 새로운 안내를 확인하세요.'], faq: ['자주 묻는 질문', '시작하기 전에 궁금한 내용을 확인하세요.'] }[kind];
   const announcements = data?.announcements ?? [];
   return (
     <main className="container section info-page">
@@ -90,6 +91,37 @@ export function VerifyPage({ code: initial }: { code?: string }) {
           </div>
         ) : <Empty title="수료증을 찾을 수 없어요" description={result.error} />
       )}
+    </main>
+  );
+}
+
+/** 이용약관 · 개인정보처리방침 (관리자 입력 전문 우선, 없으면 기본 문안) */
+export function PolicyPage({ kind }: { kind: 'terms' | 'privacy' }) {
+  const { data, go } = useEdu();
+  const s = data?.settings ?? {};
+  const custom = (kind === 'terms' ? s.terms_text : s.privacy_text) || '';
+  const text = fillPolicy(custom || (kind === 'terms' ? DEFAULT_TERMS : DEFAULT_PRIVACY), s);
+  const title = kind === 'terms' ? '이용약관' : '개인정보처리방침';
+  const blocks: ReactNode[] = [];
+  let list: string[] = [];
+  const flush = () => { if (list.length) { blocks.push(<ul key={'u' + blocks.length}>{list.map((t, i) => <li key={i}>{t}</li>)}</ul>); list = []; } };
+  for (const raw of text.split('\n')) {
+    const line = raw.trim();
+    if (line.startsWith('- ')) { list.push(line.slice(2)); continue; }
+    flush();
+    if (!line) continue;
+    if (line.startsWith('## ')) blocks.push(<h2 key={'h' + blocks.length}>{line.slice(3)}</h2>);
+    else blocks.push(<p key={'p' + blocks.length}>{line}</p>);
+  }
+  flush();
+  return (
+    <main className="container section info-page policy-page">
+      <PageHead title={title} sub={`${s.site_name || '셀러브릭스 캠퍼스'} 서비스 이용에 관한 안내입니다. 시행일 ${s.policy_date || POLICY_EFFECTIVE}`} />
+      <div className="policy-tabs">
+        <button className={kind === 'terms' ? 'active' : ''} onClick={() => go('/terms')}>이용약관</button>
+        <button className={kind === 'privacy' ? 'active' : ''} onClick={() => go('/privacy')}>개인정보처리방침</button>
+      </div>
+      <article className="panel policy-body">{blocks}</article>
     </main>
   );
 }

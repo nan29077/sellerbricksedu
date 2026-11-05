@@ -8,10 +8,10 @@ export function Logo({ onClick }: { onClick?: () => void } = {}) {
   const inner = (
     <>
       <img src="/brand/sellerbricks-light.svg" width="192" height="41" alt="셀러브릭스" />
-      <span className="brand-edu-label">EDU</span>
+      <span className="brand-edu-label">CAMPUS</span>
     </>
   );
-  if (onClick) return <button type="button" className="brand brand-link" onClick={onClick} aria-label="셀러브릭스 에듀 홈으로">{inner}</button>;
+  if (onClick) return <button type="button" className="brand brand-link" onClick={onClick} aria-label="셀러브릭스 캠퍼스 홈으로">{inner}</button>;
   return <span className="brand">{inner}</span>;
 }
 
@@ -41,7 +41,7 @@ export function PageHead({ title, sub, action }: { title: string; sub?: string; 
   return (
     <div className="page-head">
       <div>
-        <span className="eyebrow">{admin ? '셀러브릭스 에듀 · 관리자' : '셀러브릭스 에듀 · 나의 학습'}</span>
+        <span className="eyebrow">{admin ? '셀러브릭스 캠퍼스 · 관리자' : '셀러브릭스 캠퍼스 · 나의 학습'}</span>
         <h1>{title}</h1>
         {sub && <p>{sub}</p>}
       </div>

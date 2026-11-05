@@ -69,8 +69,8 @@ export interface LessonNote { id: string; user_id: string; lesson_id: string; at
 export interface LearningDay { day: string; seconds: number; completed: number }
 export interface Certificate { id: string; user_id: string; course_id: string; issued: string; course_title: string; name?: string }
 export interface Review { user_id: string; course_id: string; rating: number; body: string; created: string; name: string; avatar: number }
-export interface Message { id: string; user_id: string; lesson_id: string | null; body: string; reply: string; created: string; public: number; resolved: number; pinned: number; name: string; email?: string; avatar: number; votes: number; voted: number }
-export interface Announcement { id: string; title: string; body: string; cohort_id: string | null; pinned: number; author_id: string; created: string; cohort_name: string | null }
+export interface Message { id: string; user_id: string; lesson_id: string | null; body: string; reply: string; created: string; edited?: string; replied?: string; public: number; resolved: number; pinned: number; name: string; email?: string; avatar: number; votes: number; voted: number }
+export interface Announcement { id: string; title: string; body: string; cohort_id: string | null; pinned: number; author_id: string; created: string; cohort_name: string | null; read?: number; reads?: number }
 export interface Notification { id: string; user_id: string; type: string; title: string; body: string; link: string; read: number; created: string }
 export interface Cohort { id: string; name: string; starts: string; ends: string; description: string; status: string }
 export interface Membership { user_id: string; cohort_id: string }
@@ -88,7 +88,7 @@ export interface Activity { id: string; user_id: string; kind: string; detail: s
 export interface Faq { id: string; question: string; answer: string; position: number; published: number }
 export interface LearningPath { id: string; title: string; description: string; courses: string[]; position: number; published: number; created: string }
 export interface LessonFile { id: string; lesson_id: string; name: string; size: number; type: string; created: string }
-export interface EduEvent { id: string; title: string; description: string; starts: string; ends: string; link: string; location: string; cohort_id: string | null; capacity: number; created_by: string; created: string; cohort_name: string | null; going: number; mine: number }
+export interface EduEvent { id: string; title: string; description: string; starts: string; ends: string; link: string; location: string; cohort_id: string | null; capacity: number; created_by: string; created: string; cohort_name: string | null; going: number; mine: number; replay?: string }
 export interface Post { id: string; user_id: string; category: string; title: string; excerpt: string; body?: string; pinned: number; locked: number; created: string; updated: string; name: string; author_role: Role; avatar: number; cohort_id: string | null; comments: number; likes: number; liked: number }
 export interface Comment { id: string; post_id: string; user_id: string; body: string; created: string; name: string; author_role: Role; avatar: number }
 export interface QuizAttempt { lesson_id: string; score: number; passed: number; created: string }

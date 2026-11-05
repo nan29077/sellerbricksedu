@@ -1,5 +1,7 @@
 'use client';
-import { Users, BookOpen, Video, CheckCircle2, MessageCircle, ChevronRight, Plus, ClipboardList, Activity, Trophy, Clock } from 'lucide-react';
+import { useState } from 'react';
+import { Users, BookOpen, Video, CheckCircle2, MessageCircle, ChevronRight, Plus, ClipboardList, Activity, Trophy, Clock, AlertTriangle, BellRing, HelpCircle } from 'lucide-react';
+import { atRisk } from '../../../lib/insights';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { useEdu } from '../../../lib/edu-store';
 import { addDays, kstDay, relTime, fmtLong } from '../../../lib/learning';
@@ -9,6 +11,7 @@ const KIND_LABEL: Record<string, string> = { login: '로그인', lesson_complete
 
 export function AdminDashboard() {
   const { data, courses, lessons, go, openModal, ls, pct } = useEdu();
+  const [nowMs] = useState(() => Date.now());
   if (!data) return null;
   const users = data.users ?? [], ps = data.allProgress ?? [];
   const students = users.filter((u) => u.role === 'student');
@@ -62,6 +65,25 @@ export function AdminDashboard() {
           <div className="funnel">{funnel.map(([l, n], i) => <div key={l}><span>{l}</span><div className="progress-track small"><i style={{ width: (funnel[0][1] ? (n / funnel[0][1]) * 100 : 0) + '%', opacity: 1 - i * 0.12 }} /></div><b>{n}</b></div>)}</div>
         </div>
       </div>
+
+      {(() => {
+        const risk = atRisk(users, lessons.length, nowMs);
+        const hard = Object.entries(data.quizStats ?? {}).filter(([, s]) => s.attempts >= 3).map(([id, s]) => ({ lesson: lessons.find((l) => l.id === id), rate: Math.round((s.passed / s.attempts) * 100), s })).filter((x) => x.lesson).sort((a, b) => a.rate - b.rate).slice(0, 5);
+        return (
+          <div className="admin-two">
+            <div className="panel risk-panel">
+              <div className="section-heading"><div><h2><AlertTriangle size={20} className="warn-text" /> 이탈 위험 교육생</h2><p className="muted">승인 후 학습이 멈춘 교육생이에요. 짧은 독려 알림이 복귀율을 높입니다.</p></div>
+                {risk.length > 0 && <Button small secondary onClick={() => openModal('nudge', { ids: risk.map((r) => r.user.id), title: '오늘 10분만 학습을 이어가 볼까요?', body: '짧은 배움이 다음 라이브의 자신감이 됩니다. 멈춘 곳부터 이어서 학습해 보세요.', link: '/learn' })}><BellRing size={14} /> {risk.length}명 독려</Button>}</div>
+              {risk.length ? <ul className="risk-list">{risk.slice(0, 8).map(({ user: u, reason, level }) => <li key={u.id}><CharacterAvatar index={u.avatar} /><div><b>{u.name}</b><small>{u.completed}강 완료 · {u.last_active ? '마지막 활동 ' + relTime(u.last_active) : '활동 기록 없음'}</small></div><Pill tone={level === 2 ? 'bad' : 'warn'}>{reason}</Pill></li>)}</ul> : <p className="muted small-muted">모든 교육생이 꾸준히 학습하고 있어요.</p>}
+              {risk.length > 8 && <button className="text-link" onClick={() => go('/admin/members?status=inactive')}>전체 {risk.length}명 보기 <ChevronRight size={14} /></button>}
+            </div>
+            <div className="panel">
+              <div className="section-heading"><div><h2><HelpCircle size={20} className="purple" /> 어려운 확인 문제</h2><p className="muted">응시 3회 이상 강의 중 통과율이 낮은 순</p></div><button onClick={() => go('/admin/quiz')}>퀴즈 분석 <ChevronRight size={16} /></button></div>
+              {hard.length ? hard.map(({ lesson, rate, s }) => <div className="course-analytics" key={lesson!.id}><div><b>{lesson!.title}</b><span className={rate < 50 ? 'bad-text' : ''}>{rate}%</span></div><div className="progress-track"><i style={{ width: rate + '%' }} /></div><small>{courses.find((c) => c.id === lesson!.course_id)?.title} · 응시 {s.attempts}회 · 평균 {s.avg}점</small></div>) : <p className="muted small-muted">아직 분석할 응시 기록이 충분하지 않아요.</p>}
+            </div>
+          </div>
+        );
+      })()}
 
       <div className="admin-two">
         <div className="panel">

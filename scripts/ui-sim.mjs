@@ -1,19 +1,19 @@
 #!/usr/bin/env node
 /**
- * 셀러브릭스 에듀 — 브라우저 UI 시뮬레이션 (Playwright)
+ * 셀러브릭스 캠퍼스 — 브라우저 UI 시뮬레이션 (Playwright)
  * 준비: npm i -g playwright && npx playwright install chromium   (또는 프로젝트 밖 임시 폴더에 설치)
  * 실행: 서버를 띄운 뒤  node scripts/ui-sim.mjs [http://127.0.0.1:3040]
  * 체험 계정과 테스트 데이터를 생성하므로 로컬/스테이징에서만 실행하세요.
  */
 import { chromium } from 'playwright';
 const B = process.argv[2] || 'http://127.0.0.1:3040';
-const b = await chromium.launch();
+const b = await chromium.launch(process.env.PW_CHROME ? { executablePath: process.env.PW_CHROME } : {});
 const issues = [], ok = [];
 const pass = (l) => ok.push(l);
 const fail = (l) => issues.push(l);
 function watch(p, tag) {
   p.on('pageerror', e => fail(`[${tag}] pageerror ${e.message}`));
-  p.on('console', m => { if (m.type() === 'error' && !/favicon|404|net::ERR_ABORTED/.test(m.text())) fail(`[${tag}] console ${m.text().slice(0, 160)}`); });
+  p.on('console', m => { if (m.type() === 'error' && !/favicon|status of 4\d\d|net::ERR_ABORTED/.test(m.text())) fail(`[${tag}] console ${m.text().slice(0, 160)}`); });
   p.on('response', r => { if (r.status() >= 500) fail(`[${tag}] HTTP ${r.status()} ${r.url()}`); });
 }
 const t = (ms) => new Promise(r => setTimeout(r, ms));
@@ -28,7 +28,12 @@ async function S1() {
   await p.fill('input[autocomplete=name]', '시뮬셀러');
   await p.fill('input[type=email]', email);
   await p.fill('input[type=password]', 'simulation123');
-  await p.check('input[type=checkbox]');
+  // 필수 동의 하나 빠지면 차단
+  await p.locator('.consent-box input[type=checkbox]').nth(1).check();
+  await p.getByRole('button', { name: '교육 가입 신청' }).last().click();
+  await t(300);
+  /필수 항목/.test(await p.locator('.form-message').textContent() || '') ? pass('필수 동의 누락 시 가입 차단') : fail('필수 동의 누락 차단 실패');
+  await p.locator('.consent-all input').check();
   await p.getByRole('button', { name: '교육 가입 신청' }).last().click();
   await t(800);
   const msg = await p.locator('.form-message').textContent();
@@ -136,10 +141,11 @@ async function S2() {
   (await p.locator('text=누구나 최고 관리자').count()) ? pass('체험 계정 경고 표시') : fail('체험 계정 경고 없음');
   // 과정 삭제 → 학습 경로·교육생 화면 안전
   await p.goto(B + '/admin/courses', { waitUntil: 'networkidle' });
+  const before = await p.locator('.admin-course', { hasText: '시뮬 과정' }).count();
   const card = p.locator('.admin-course', { hasText: '시뮬 과정' }).first();
   await card.locator('button[title=삭제]').click(); await t(300);
   await p.locator('[role=alertdialog] button', { hasText: '삭제' }).click(); await t(900);
-  (await p.locator('text=시뮬 과정').count()) === 0 ? pass('과정 삭제 반영') : fail('과정 삭제 미반영');
+  (await p.locator('.admin-course', { hasText: '시뮬 과정' }).count()) === before - 1 ? pass('과정 삭제 반영') : fail('과정 삭제 미반영');
   await ctx.close();
 }
 

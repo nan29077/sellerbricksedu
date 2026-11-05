@@ -18,7 +18,8 @@ export function LoginPage({ redirectTo }: { redirectTo?: string }) {
   const [mode, setMode] = useState<'login' | 'register' | 'forgot'>(params.get('mode') === 'register' ? 'register' : 'login');
   const [form, setForm] = useState({ email: '', password: '', name: '' });
   const [message, setMessage] = useState(OAUTH_MESSAGES[params.get('oauth') || ''] || '');
-  const [agree, setAgree] = useState(false);
+  const [agree, setAgree] = useState({ terms: false, privacy: false, age: false });
+  const allAgreed = agree.terms && agree.privacy && agree.age;
   const oauth = data?.oauth ?? { kakao: false, naver: false };
   const returnTo = redirectTo || params.get('return_to') || '/learn';
 
@@ -30,14 +31,14 @@ export function LoginPage({ redirectTo }: { redirectTo?: string }) {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setMessage('');
-    if (mode === 'register' && !agree) return setMessage('교육 계정 신청과 개인정보 처리에 동의해 주세요.');
+    if (mode === 'register' && !allAgreed) return setMessage('필수 항목(이용약관, 개인정보 수집·이용, 만 14세 이상)에 모두 동의해 주세요.');
     try {
       if (mode === 'forgot') {
         const j = await act('forgot', { email: form.email });
         setMessage(j.message);
         return;
       }
-      const j = await act(mode, form);
+      const j = await act(mode, mode === 'register' ? { ...form, agree: true } : form);
       if (mode === 'register') {
         setMessage(j.message);
         if (j.message?.includes('바로 로그인')) setMode('login');
@@ -57,7 +58,7 @@ export function LoginPage({ redirectTo }: { redirectTo?: string }) {
       <div className="login-story">
         <span className="eyebrow">SELLERBRICKS ACADEMY</span>
         <h1>배움이 자신감으로,<br />자신감이 첫 판매로.</h1>
-        <p>라이브 커머스의 첫 걸음을<br />셀러브릭스 에듀와 함께하세요.</p>
+        <p>라이브 커머스의 첫 걸음을<br />셀러브릭스 캠퍼스와 함께하세요.</p>
         <img src="/images/banner-1.webp" alt="라이브 커머스 셀러" />
         <div className="login-note"><ShieldCheck size={21} /><span>셀러브릭스 셀러를 위한 체계적인 교육</span></div>
       </div>
@@ -88,7 +89,12 @@ export function LoginPage({ redirectTo }: { redirectTo?: string }) {
             <label>비밀번호<input type="password" required minLength={mode === 'register' ? 10 : 1} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder={mode === 'register' ? '10자 이상 입력해 주세요' : '비밀번호를 입력해 주세요'} autoComplete={mode === 'register' ? 'new-password' : 'current-password'} /></label>
           )}
           {mode === 'register' && (
-            <label className="check-label"><input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} /><span>교육 계정 신청에 동의합니다. 이름·이메일은 계정 승인과 학습 관리에 사용됩니다.</span></label>
+            <div className="consent-box">
+              <label className="check-label consent-all"><input type="checkbox" checked={allAgreed} onChange={(e) => setAgree({ terms: e.target.checked, privacy: e.target.checked, age: e.target.checked })} /><span>필수 항목 전체 동의</span></label>
+              <label className="check-label"><input type="checkbox" checked={agree.terms} onChange={(e) => setAgree({ ...agree, terms: e.target.checked })} /><span>[필수] 이용약관 동의</span><a href="/terms" target="_blank" rel="noopener">보기</a></label>
+              <label className="check-label"><input type="checkbox" checked={agree.privacy} onChange={(e) => setAgree({ ...agree, privacy: e.target.checked })} /><span>[필수] 개인정보 수집·이용 동의 <small>이름·이메일 / 계정 승인·학습 관리 / 탈퇴 시까지</small></span><a href="/privacy" target="_blank" rel="noopener">보기</a></label>
+              <label className="check-label"><input type="checkbox" checked={agree.age} onChange={(e) => setAgree({ ...agree, age: e.target.checked })} /><span>[필수] 만 14세 이상입니다</span></label>
+            </div>
           )}
           {message && <div className="form-message" role="status">{message}</div>}
           <button className="button full" disabled={busy} type="submit">{busy ? '처리 중…' : mode === 'register' ? '교육 가입 신청' : mode === 'forgot' ? '재설정 안내 받기' : '이메일로 로그인'}</button>
@@ -101,6 +107,7 @@ export function LoginPage({ redirectTo }: { redirectTo?: string }) {
               <button className="kakao" onClick={() => social('kakao')}><MessageCircle size={19} fill="currentColor" /> 카카오 로그인 {!oauth.kakao && <small>준비 중</small>}</button>
               <button className="naver" onClick={() => social('naver')}><b>N</b> 네이버 로그인 {!oauth.naver && <small>준비 중</small>}</button>
             </div>
+            <p className="social-consent">간편 로그인으로 처음 가입하면 <a href="/terms" target="_blank" rel="noopener">이용약관</a>과 <a href="/privacy" target="_blank" rel="noopener">개인정보처리방침</a>에 동의하고 만 14세 이상임을 확인한 것으로 봅니다.</p>
             {data?.settings?.demo_mode !== '0' && <div className="demo-login">
               <b>먼저 둘러보고 싶으신가요?</b>
               <p>테스트 계정으로 교육생과 관리자 화면을 체험하세요.</p>
