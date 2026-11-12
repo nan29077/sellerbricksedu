@@ -12,6 +12,9 @@ export interface User {
   weekly_goal: number;
   bio: string;
   has_password: number;
+  email_verified?: number;
+  mfa?: number;
+  notify_prefs?: string;
 }
 
 export interface Course {
@@ -25,6 +28,8 @@ export interface Course {
   level: string;
   objectives: string;
   instructor: string;
+  sequential?: number;
+  require_assignments?: number;
   rating: number;
   reviewCount: number;
   learners: number;
@@ -48,6 +53,7 @@ export interface Lesson {
   objectives: string;
   transcript: string;
   preview: number;
+  captions?: string;
 }
 
 export interface Progress {
@@ -70,7 +76,7 @@ export interface LearningDay { day: string; seconds: number; completed: number }
 export interface Certificate { id: string; user_id: string; course_id: string; issued: string; course_title: string; name?: string }
 export interface Review { user_id: string; course_id: string; rating: number; body: string; created: string; name: string; avatar: number }
 export interface Message { id: string; user_id: string; lesson_id: string | null; body: string; reply: string; created: string; edited?: string; replied?: string; public: number; resolved: number; pinned: number; name: string; email?: string; avatar: number; votes: number; voted: number }
-export interface Announcement { id: string; title: string; body: string; cohort_id: string | null; pinned: number; author_id: string; created: string; cohort_name: string | null; read?: number; reads?: number }
+export interface Announcement { id: string; title: string; body: string; cohort_id: string | null; pinned: number; author_id: string; created: string; cohort_name: string | null; read?: number; reads?: number; public?: number }
 export interface Notification { id: string; user_id: string; type: string; title: string; body: string; link: string; read: number; created: string }
 export interface Cohort { id: string; name: string; starts: string; ends: string; description: string; status: string }
 export interface Membership { user_id: string; cohort_id: string }
@@ -80,7 +86,7 @@ export interface Assignment { id: string; course_id: string; lesson_id: string |
 export interface Submission { id: string; assignment_id: string; user_id: string; body: string; link: string; status: 'submitted' | 'passed' | 'revise'; feedback: string; score: number | null; created: string; reviewed: string; name?: string; email?: string }
 
 export interface AdminUser {
-  id: string; name: string; email: string; role: Role; status: string; created: string; avatar: number; memo: string; cohort_id: string | null; has_password: number; last_active: string | null; completed: number; watched: number;
+  id: string; name: string; email: string; role: Role; status: string; created: string; avatar: number; memo: string; cohort_id: string | null; has_password: number; last_active: string | null; completed: number; watched: number; email_verified?: number; mfa?: number;
 }
 export interface DailyStat { day: string; learners: number; seconds: number; completed: number }
 export interface Activity { id: string; user_id: string; kind: string; detail: string; created: string; name: string }
@@ -94,8 +100,15 @@ export interface Comment { id: string; post_id: string; user_id: string; body: s
 export interface QuizAttempt { lesson_id: string; score: number; passed: number; created: string }
 export interface QuizStat { attempts: number; passed: number; avg: number; perQuestion: { correct: number; total: number }[] }
 
+export interface EmailType { type: string; label: string; student: boolean; staff: boolean }
+
 export interface Payload {
+  stamp?: string;
   user: User | null;
+  emailTypes?: EmailType[];
+  mailReady?: boolean;
+  demo?: boolean;
+  needsAdmin?: boolean;
   settings: Record<string, string>;
   oauth: { kakao: boolean; naver: boolean };
   courses: Course[];

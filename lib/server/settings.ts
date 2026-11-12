@@ -1,4 +1,4 @@
-import { all, run } from './db';
+import { all, run, envVar } from './db';
 
 export const SETTING_DEFAULTS = {
   pass_score: '80', // 퀴즈 통과 점수
@@ -16,7 +16,11 @@ export const SETTING_DEFAULTS = {
   site_name: '셀러브릭스 캠퍼스',
   cert_signer: '셀러브릭스 캠퍼스 운영팀',
   max_video_mb: '50',
-  demo_mode: '1', // 체험 계정(교육생·최고 관리자) 허용. 운영에서는 0 권장
+  demo_mode: '0', // 체험 계정(교육생·최고 관리자 조회 전용) 허용. 운영에서는 0 권장
+  auto_reminders: '1', // 일정 시작 전·과제 마감 전날·장기 미학습 자동 알림
+  mail_notify: '1', // 메일 발송 설정이 있으면 주요 알림을 메일로도 보냄
+  quiz_reveal: 'pass', // 확인 문제 정답 공개 시점: pass(통과 후) | always(제출 직후)
+  site_origin: '', // 메일 링크에 쓰는 사이트 주소(비우면 마지막 접속 주소)
   // 약관·개인정보 (비어 있으면 기본 문안 사용)
   terms_text: '',
   privacy_text: '',
@@ -35,15 +39,22 @@ export async function getSettings(): Promise<Record<string, string>> {
   const rows = await all<{ id: string; value: string }>('SELECT id,value FROM settings');
   const map: Record<string, string> = { ...SETTING_DEFAULTS };
   for (const r of rows) map[r.id] = r.value;
+  // Workers 비밀 값으로 등록하면 DB에 저장된 값보다 우선한다 (wrangler secret put KAKAO_SECRET 등)
+  for (const [k, e] of Object.entries(ENV_SECRETS)) { const v = envVar(e); if (v) map[k] = v; }
   return map;
 }
+
+const ENV_SECRETS: Record<string, string> = { kakao_client: 'KAKAO_CLIENT', kakao_secret: 'KAKAO_SECRET', naver_client: 'NAVER_CLIENT', naver_secret: 'NAVER_SECRET', resend_key: 'RESEND_KEY', mail_from: 'MAIL_FROM', ai_key: 'OPENAI_API_KEY' };
+/** 환경 변수로 지정되어 화면에서 바꿀 수 없는 설정 */
+export const envManaged = () => Object.entries(ENV_SECRETS).filter(([, e]) => !!envVar(e)).map(([k]) => k);
+export const mailReady = (s: Record<string, string>) => !!(s.resend_key && s.mail_from);
 
 export async function setSetting(id: string, value: string) {
   await run('INSERT INTO settings (id,value) VALUES (?,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value', id, value);
 }
 
 /** 클라이언트에 노출 가능한 설정(비밀 값 제외) */
-const PUBLIC_KEYS = ['pass_score', 'watch_ratio', 'site_name', 'cert_signer', 'max_video_mb', 'demo_mode', 'terms_text', 'privacy_text', 'privacy_officer', 'privacy_contact', 'policy_date', 'banner_on', 'banner_text', 'banner_link', 'banner_tone'];
+const PUBLIC_KEYS = ['pass_score', 'watch_ratio', 'site_name', 'cert_signer', 'max_video_mb', 'demo_mode', 'quiz_reveal', 'terms_text', 'privacy_text', 'privacy_officer', 'privacy_contact', 'policy_date', 'banner_on', 'banner_text', 'banner_link', 'banner_tone'];
 const SECRET = ['ai_key', 'kakao_secret', 'naver_secret', 'resend_key'];
 /** 모든 방문자에게 노출 가능한 설정만 */
 export function publicSettings(map: Record<string, string>) {
@@ -52,8 +63,9 @@ export function publicSettings(map: Record<string, string>) {
 /** 최고 관리자용: 비밀 값 제외 전체 + 비밀 값 존재 여부 */
 export function adminSettingsView(map: Record<string, string>) {
   const result: Record<string, string> = {};
-  for (const [k, v] of Object.entries(map)) if (!SECRET.includes(k) && !['schema_version', 'seed_complete', 'extras_seeded', 'curriculum_version'].includes(k)) result[k] = v;
+  for (const [k, v] of Object.entries(map)) if (!SECRET.includes(k) && !['schema_version', 'seed_complete', 'extras_seeded', 'curriculum_version', 'data_version', 'maint_at'].includes(k)) result[k] = v;
   for (const k of SECRET) result['has_' + k] = map[k] ? '1' : '0';
+  result.env_managed = envManaged().join(',');
   return result;
 }
 

@@ -59,7 +59,10 @@ export function EduProvider({ children }: { children: ReactNode }) {
   const [mobile, setMobile] = useState(false);
   const [confirm, setConfirm] = useState<ConfirmState>(null);
   const loading = useRef<Promise<any> | null>(null);
+  const again = useRef(false);
   const etag = useRef<string>('');
+  const stamp = useRef<string>('');
+  const lastFull = useRef(0);
   const dataRef = useRef<Payload | null>(null);
   useEffect(() => { dataRef.current = data; }, [data]);
   const modalInitial = useRef<string>('');
@@ -69,29 +72,54 @@ export function EduProvider({ children }: { children: ReactNode }) {
     setToastState(typeof t === 'string' ? { text: t, tone } : t);
   }, []);
 
-  const load = useCallback(async () => {
-    if (loading.current) return loading.current;
-    loading.current = (async () => {
+  /**
+   * 전체 상태를 다시 받는다. 이미 받는 중에 다시 요청되면, 진행 중인 요청이 끝난 뒤 한 번 더 받아
+   * 방금 저장한 내용이 이전 응답에 덮이지 않게 한다(모든 호출자는 마지막 결과를 받는다).
+   */
+  const load = useCallback(async (): Promise<Payload | undefined> => {
+    if (loading.current) { again.current = true; return loading.current; }
+    const fetchOnce = async (): Promise<Payload | undefined> => {
       setRefreshing(true);
       try {
         const r = await fetch('/api/edu', { cache: 'no-store', credentials: 'same-origin', headers: etag.current ? { 'If-None-Match': etag.current } : {} });
-        if (r.status === 304) return dataRef.current ?? undefined; // 변경 없음
+        if (r.status === 304) { lastFull.current = Date.now(); return dataRef.current ?? undefined; } // 변경 없음
         const j: any = await r.json();
         if (!r.ok) throw Error(j.error);
         etag.current = r.headers.get('ETag') || '';
+        if (j.stamp) stamp.current = j.stamp;
+        document.documentElement.classList.add('app-ready'); // 검색엔진용 서버 본문 숨김
+        lastFull.current = Date.now();
         setData(j);
+        dataRef.current = j;
         setError('');
         return j as Payload;
       } catch (e: any) {
         setError(e.message || '불러오지 못했습니다.');
         return undefined;
       } finally {
-        loading.current = null;
         setRefreshing(false);
       }
+    };
+    const chain = (async () => {
+      let result: Payload | undefined;
+      do { again.current = false; result = await fetchOnce(); } while (again.current);
+      return result;
     })();
-    return loading.current;
+    loading.current = chain;
+    try { return await chain; } finally { loading.current = null; }
   }, []);
+
+  /** 가벼운 변경 확인 — 스탬프나 로그인 상태가 바뀌었을 때(또는 5분마다)만 전체를 받는다 */
+  const sync = useCallback(async () => {
+    if (document.visibilityState !== 'visible') return;
+    if (Date.now() - lastFull.current > 5 * 60000) { load(); return; }
+    try {
+      const r = await fetch('/api/edu?stamp=1', { cache: 'no-store', credentials: 'same-origin' });
+      if (!r.ok) return;
+      const j: any = await r.json();
+      if (j.stamp !== stamp.current || (j.user || null) !== (dataRef.current?.user?.id || null)) load();
+    } catch { /* 오프라인 */ }
+  }, [load]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- 초기 경로는 클라이언트에서만 알 수 있음
@@ -102,18 +130,16 @@ export function EduProvider({ children }: { children: ReactNode }) {
       setMobile(false);
     };
     window.addEventListener('popstate', fn);
-    const vis = () => {
-      if (document.visibilityState === 'visible') load();
-    };
+    const vis = () => { sync(); };
     document.addEventListener('visibilitychange', vis);
-    // 알림·답변 등 관리자↔교육생 간 변경 사항을 주기적으로 동기화 (ETag로 변경 없으면 304)
-    const poll = setInterval(() => { if (document.visibilityState === 'visible') load(); }, 60000);
+    // 알림·답변 등 관리자↔교육생 간 변경 사항을 주기적으로 동기화 (변경 스탬프 확인 → 바뀐 경우만 전체)
+    const poll = setInterval(sync, 30000);
     return () => {
       clearInterval(poll);
       window.removeEventListener('popstate', fn);
       document.removeEventListener('visibilitychange', vis);
     };
-  }, [load]);
+  }, [load, sync]);
 
   useEffect(() => {
     if (!toast) return;
@@ -215,7 +241,7 @@ export function EduProvider({ children }: { children: ReactNode }) {
 
   const value: Store = {
     path, data, error, busy, refreshing, toast, modal, editor, mobile, confirm,
-    user, admin: isStaff(user?.role), superAdmin: user?.role === 'admin', courses, lessons, progress,
+    user, admin: isStaff(user?.role), superAdmin: user?.role === 'admin' && !data?.demo, courses, lessons, progress,
     go, load, act, perform, patch, setToast, setModal, setEditor, setMobile, setBusy, openModal, closeModal, ask,
     ...helpers,
     unread: data?.notifications?.filter((n) => !n.read).length ?? 0,

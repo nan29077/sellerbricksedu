@@ -9,7 +9,7 @@
  * - 포트 3040 사용 여부 확인, 서버 응답을 확인한 뒤 브라우저 열기
  */
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -43,9 +43,11 @@ function run(cmd, args) {
   const r = spawnSync(cmd, args, { stdio: 'inherit', shell: win, env: { ...process.env, COREPACK_ENABLE_DOWNLOAD_PROMPT: '0', CI: '1' } });
   return r.status === 0;
 }
-const installed = () => ['vinext/dist/cli.js', 'wrangler/bin/wrangler.js'].every((p) => existsSync(path.join(root, 'node_modules', p)));
+// package.json 의 모든 의존성이 설치되어 있는지 확인 (새 패키지가 추가된 뒤 git pull 한 경우에도 자동 설치)
+const deps = (() => { try { const p = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8')); return Object.keys({ ...p.dependencies, ...p.devDependencies }); } catch { return []; } })();
+const installed = () => ['vinext/dist/cli.js', 'wrangler/bin/wrangler.js'].every((p) => existsSync(path.join(root, 'node_modules', p))) && deps.every((d) => existsSync(path.join(root, 'node_modules', d, 'package.json')));
 if (!installed()) {
-  say('처음 실행이라 패키지를 설치합니다. 3~5분 걸릴 수 있어요...\n');
+  say('필요한 패키지를 설치합니다. 처음에는 3~5분 걸릴 수 있어요...\n');
   const ok = run('corepack', ['pnpm', 'install']) || (say('corepack 실행이 안 되어 npx 로 다시 시도합니다...'), run('npx', ['-y', 'pnpm@11.25.0', 'install']));
   if (!ok || !installed()) fail('패키지 설치에 실패했습니다. 인터넷 연결을 확인하고 다시 실행해 주세요.');
   console.log();

@@ -42,6 +42,8 @@ export function CourseDetailPage({ id }: { id: string }) {
             {assignments.length > 0 && <span><ClipboardList size={16} />과제 {assignments.length}개</span>}
             {c.learners > 0 && <span><Users size={16} />{c.learners}명 학습</span>}
             {c.reviewCount > 0 && <span><Stars value={c.rating} size={14} /> {c.rating.toFixed(1)} ({c.reviewCount})</span>}
+            {!!c.sequential && <span>순서대로 학습</span>}
+            {!!c.require_assignments && assignments.length > 0 && <span>수료 조건: 과제 통과</span>}
           </div>
           {user && pc > 0 && <ProgressBar value={pc} label="나의 진도" />}
           <div className="detail-actions">

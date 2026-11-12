@@ -157,7 +157,7 @@ export function CertificatesPage() {
             <Button secondary small onClick={() => { navigator.clipboard?.writeText(`${location.origin}/verify/${c.id}`).then(() => setToast('검증 링크를 복사했습니다. 이력서나 SNS에 붙여 넣어 보세요.'), () => setToast('복사하지 못했습니다. 주소를 직접 선택해 주세요.', 'error')); }}><Share2 size={16} /> 검증 링크 복사</Button>
           </div>
         </div>
-      )) : <Empty title="배움의 완주를 기다리고 있어요" description="과정의 모든 영상과 확인 문제를 완료하면 수료증이 자동 발급됩니다." icon={Trophy} action={<Button small secondary onClick={() => go('/learn/courses')}>나의 강의실</Button>} />}
+      )) : <Empty title="배움의 완주를 기다리고 있어요" description="과정의 모든 강의(영상·확인 문제)를 완료하면 수료증이 자동 발급됩니다. 과제 통과가 수료 조건인 과정은 과제도 통과해야 해요." icon={Trophy} action={<Button small secondary onClick={() => go('/learn/courses')}>나의 강의실</Button>} />}
     </>
   );
 }

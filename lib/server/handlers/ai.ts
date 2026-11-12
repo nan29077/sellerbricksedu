@@ -1,4 +1,4 @@
-import { first, HttpError } from '../db';
+import { HttpError } from '../db';
 import { out, str } from '../http';
 import type { AuthedCtx } from './types';
 
@@ -12,10 +12,10 @@ const PROMPTS = {
   summary: (topic: string) => `다음 강의 내용을 교육생에게 보여줄 2문장 소개와 학습 목표 3개(줄바꿈 구분)로 정리하세요. 형식: 첫 줄에 소개, 그 다음 줄부터 목표 한 줄씩. 내용: ${topic}`,
 };
 
-export async function ai({ body }: AuthedCtx) {
-  const key = await first<{ value: string }>(`SELECT value FROM settings WHERE id='ai_key'`);
+export async function ai({ body, settings }: AuthedCtx) {
+  const key = settings.ai_key ? { value: settings.ai_key } : null;
   if (!key) throw new HttpError(400, '먼저 연동 설정에서 OpenAI API 키를 연결해 주세요. 연결 전에는 비용이 발생하지 않습니다.');
-  const model = (await first<{ value: string }>(`SELECT value FROM settings WHERE id='ai_model'`))?.value || 'gpt-4.1-mini';
+  const model = settings.ai_model || 'gpt-4.1-mini';
   const mode = (['draft', 'quiz', 'chapters', 'summary'] as const).includes(body.mode) ? (body.mode as keyof typeof PROMPTS) : 'draft';
   const topic = str(body.topic, 6000);
   if (!topic) throw new HttpError(400, '주제나 내용을 입력해 주세요.');

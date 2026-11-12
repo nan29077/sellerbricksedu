@@ -17,7 +17,13 @@ export type SessionUser = {
   weekly_goal: number;
   bio: string;
   has_password: number;
+  email_verified: number;
+  mfa: number;
+  notify_prefs: string;
 };
+
+/** 공유 체험 계정 */
+export const isDemo = (u?: { id: string } | null) => !!u && u.id.startsWith('demo-');
 
 export async function hash(password: string, salt: string) {
   const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits']);
@@ -29,9 +35,17 @@ export async function encodePassword(password: string) {
   return salt + ':' + (await hash(password, salt));
 }
 export async function verifyPassword(stored: string | null | undefined, password: string) {
-  if (!stored) return false;
+  if (!stored) {
+    // 없는 계정도 같은 시간이 걸리게 해 응답 시간으로 가입 여부를 추정하지 못하게 한다
+    await hash(password, 'timing-equalizer');
+    return false;
+  }
   const [salt, pw] = stored.split(':');
-  return (await hash(password, salt)) === pw;
+  const h = await hash(password, salt);
+  if (h.length !== (pw || '').length) return false;
+  let diff = 0;
+  for (let i = 0; i < h.length; i++) diff |= h.charCodeAt(i) ^ pw.charCodeAt(i);
+  return diff === 0;
 }
 
 export function sessionToken(req: Request) {
@@ -45,7 +59,8 @@ export async function current(req: Request): Promise<SessionUser | null> {
     `SELECT users.id,users.email,users.name,users.role,users.status,users.created,
             COALESCE(user_profiles.avatar,0) AS avatar,COALESCE(user_profiles.name_changes,0) AS name_changes,
             COALESCE(user_profiles.weekly_goal,3) AS weekly_goal,COALESCE(user_profiles.bio,'') AS bio,
-            CASE WHEN users.password IS NULL THEN 0 ELSE 1 END AS has_password, sessions.expires
+            CASE WHEN users.password IS NULL THEN 0 ELSE 1 END AS has_password, COALESCE(users.email_verified,0) AS email_verified,
+            COALESCE(user_profiles.totp_enabled,0) AS mfa, COALESCE(user_profiles.notify_prefs,'') AS notify_prefs, sessions.expires
      FROM sessions JOIN users ON users.id=sessions.user_id LEFT JOIN user_profiles ON user_profiles.user_id=users.id
      WHERE sessions.id=? AND sessions.expires>? AND users.status='active'`,
     token,
@@ -134,8 +149,24 @@ export async function ipLimit(req: Request, bucket: string, limit = 10) {
     key, t, t, WINDOW, t, WINDOW, t,
   );
 }
-export async function clearFailures(req: Request, email: string) {
-  await run(`DELETE FROM login_attempts WHERE key IN (?,?)`, 'ip:' + clientIp(req), 'email:' + email);
+/** 로그인 성공 시 해당 이메일 카운터만 초기화 (IP 카운터는 유지해 다른 계정 대입을 막는다) */
+export async function clearFailures(_req: Request, email: string) {
+  await run(`DELETE FROM login_attempts WHERE key=?`, 'email:' + email);
+}
+
+/** 사용자 단위 작성 빈도 제한(도배 방지) — 운영진은 제외 */
+export async function userLimit(user: { id: string; role: string }, bucket: string, limit: number, windowMs = WINDOW) {
+  if (isStaff(user.role)) return;
+  const key = `${bucket}:u:${user.id}`;
+  const t = Date.now();
+  const r = await first<{ count: number; first: number }>('SELECT count, first FROM login_attempts WHERE key=?', key);
+  if (r && t - r.first < windowMs && r.count >= limit) throw new HttpError(429, '짧은 시간에 너무 많이 작성했어요. 잠시 후 다시 시도해 주세요.');
+  await run(
+    `INSERT INTO login_attempts (key,count,first) VALUES (?,1,?)
+     ON CONFLICT(key) DO UPDATE SET count=CASE WHEN ?-login_attempts.first>? THEN 1 ELSE login_attempts.count+1 END,
+                                    first=CASE WHEN ?-login_attempts.first>? THEN ? ELSE login_attempts.first END`,
+    key, t, t, windowMs, t, windowMs, t,
+  );
 }
 
 export const randomAvatar = () => crypto.getRandomValues(new Uint32Array(1))[0] % 30;

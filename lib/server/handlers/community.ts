@@ -2,12 +2,15 @@ import { first, run, batch, stmt, now, uid, HttpError } from '../db';
 import { out, str, bool } from '../http';
 import { notify, notifyAdmins, logActivity } from '../notify';
 import type { AuthedCtx } from './types';
+import { userLimit } from '../auth';
 
 export async function question({ body, user }: AuthedCtx) {
   const text = str(body.body, 5000);
   if (!text) throw new HttpError(400, '질문을 입력해 주세요.');
   const lessonId = body.lessonId ? str(body.lessonId, 100) : null;
   const lesson = lessonId ? await first<any>('SELECT title FROM lessons WHERE id=?', lessonId) : null;
+  if (lessonId && !lesson) throw new HttpError(404, '강의를 찾을 수 없습니다.');
+  await userLimit(user, 'question', 15);
   await run('INSERT INTO messages (id,user_id,lesson_id,body,created,public) VALUES (?,?,?,?,?,?)', uid(), user.id, lessonId, text, now(), body.isPublic === undefined ? 1 : bool(body.isPublic));
   await notifyAdmins('question', `새 질문: ${lesson?.title || '학습 문의'}`, text.slice(0, 120), '/admin/questions');
   await logActivity(user.id, 'question', lesson?.title || '');
@@ -70,7 +73,7 @@ export async function channel({ body, user }: AuthedCtx) {
   let url: URL;
   try {
     url = new URL(String(body.url));
-    if (url.protocol !== 'https:' || !HOSTS[body.platform]?.includes(url.hostname) || url.username || url.password || url.port) throw 0;
+    if (typeof body.platform !== 'string' || url.protocol !== 'https:' || !HOSTS[body.platform]?.includes(url.hostname) || url.username || url.password || url.port) throw 0;
   } catch {
     throw new HttpError(400, '선택한 플랫폼의 HTTPS 채널 주소를 입력해 주세요.');
   }
@@ -87,10 +90,11 @@ export async function channelRemove({ body, user }: AuthedCtx) {
 }
 
 export async function visit({ body, user }: AuthedCtx) {
-  if (body.targetId === user.id) return out({ ok: true });
-  const ch = await first('SELECT url FROM channels WHERE user_id=? AND platform=? AND shared=1', str(body.targetId, 100), str(body.platform, 30));
+  const targetId = str(body.targetId, 100), platform = str(body.platform, 30);
+  if (targetId === user.id) return out({ ok: true });
+  const ch = await first('SELECT url FROM channels WHERE user_id=? AND platform=? AND shared=1', targetId, platform);
   if (!ch) throw new HttpError(404, '공개된 채널을 찾을 수 없습니다.');
-  await run('INSERT OR REPLACE INTO channel_visits (user_id,target_id,platform,created) VALUES (?,?,?,?)', user.id, body.targetId, body.platform, now());
+  await run('INSERT OR REPLACE INTO channel_visits (user_id,target_id,platform,created) VALUES (?,?,?,?)', user.id, targetId, platform, now());
   return out({ ok: true });
 }
 
@@ -101,12 +105,14 @@ export async function post({ body, user }: AuthedCtx) {
   const category = POST_CATEGORIES.includes(body.category) ? body.category : '자유';
   if (!title || !text) throw new HttpError(400, '제목과 내용을 입력해 주세요.');
   if (category === '공지' && user.role === 'student') throw new HttpError(403, '공지는 운영진만 작성할 수 있습니다.');
-  if (body.id) {
-    const p = await first<any>('SELECT user_id FROM posts WHERE id=?', body.id);
+  const editId = body.id ? str(body.id, 100) : '';
+  if (editId) {
+    const p = await first<any>('SELECT user_id FROM posts WHERE id=?', editId);
     if (!p || (p.user_id !== user.id && user.role === 'student')) throw new HttpError(403, '수정 권한이 없습니다.');
-    await run('UPDATE posts SET title=?,body=?,category=?,updated=? WHERE id=?', title, text, category, now(), body.id);
-    return out({ ok: true, id: body.id });
+    await run('UPDATE posts SET title=?,body=?,category=?,updated=? WHERE id=?', title, text, category, now(), editId);
+    return out({ ok: true, id: editId });
   }
+  await userLimit(user, 'post', 10);
   const id = uid();
   await run('INSERT INTO posts (id,user_id,category,title,body,pinned,locked,created,updated) VALUES (?,?,?,?,?,0,0,?,?)', id, user.id, category, title, text, now(), now());
   await logActivity(user.id, 'post', title);
@@ -135,6 +141,7 @@ export async function comment({ body, user }: AuthedCtx) {
   const p = await first<any>('SELECT user_id, locked, title FROM posts WHERE id=?', postId);
   if (!p) throw new HttpError(404, '게시글을 찾을 수 없습니다.');
   if (p.locked && user.role === 'student') throw new HttpError(403, '댓글이 잠긴 게시글입니다.');
+  await userLimit(user, 'comment', 40);
   await run('INSERT INTO comments (id,post_id,user_id,body,created) VALUES (?,?,?,?,?)', uid(), postId, user.id, text, now());
   if (p.user_id !== user.id) await notify([p.user_id], 'system', '내 게시글에 댓글이 달렸어요', `${user.name}: ${text.slice(0, 80)}`, '/learn/lounge/' + postId);
   return out({ ok: true });

@@ -1,6 +1,9 @@
 'use client';
 import { useState } from 'react';
-import { Plus, Upload, Trash2, Sparkles, Copy } from 'lucide-react';
+import { Plus, Upload, Trash2, Sparkles, Copy, Timer, Download } from 'lucide-react';
+import { uploadLessonFile } from '../../../lib/upload';
+import { detectDuration, videoSource } from '../../../lib/video';
+import { downloadCsv } from '../../../lib/learning';
 import { useEdu } from '../../../lib/edu-store';
 import { CATEGORIES, LEVELS, PLATFORMS, platformName, fmt } from '../../../lib/learning';
 import { Button, Modal, Pill } from '../ui';
@@ -42,11 +45,16 @@ export function EduModals() {
     if (!a) return;
     const r = await perform(a, { ...editor }, successOf[a] || '저장되었습니다.');
     if (r && a === 'post' && r.id && !editor.id) store.go('/learn/lounge/' + r.id);
-    if (r && a === 'invite_bulk') setToast(`${r.created}명 등록 완료${r.results.filter((x: any) => !x.ok).length ? ` · 실패 ${r.results.filter((x: any) => !x.ok).length}건 (${r.results.filter((x: any) => !x.ok).slice(0, 3).map((x: any) => x.email + ':' + x.reason).join(', ')})` : ''}`);
+    if (r && a === 'invite_bulk') {
+      const failed = r.results.filter((x: any) => !x.ok);
+      setToast(`${r.created}명 등록 완료${r.mailed ? ` · 초대 메일 ${r.mailed}통 발송` : ''}${failed.length ? ` · 실패 ${failed.length}건 (${failed.slice(0, 3).map((x: any) => x.email + ':' + x.reason).join(', ')})` : ''}`);
+      // 비밀번호 설정 링크 목록 (메일이 없거나 직접 전달할 때)
+      if (r.created && !r.mailed) downloadCsv(`초대-링크-${new Date().toISOString().slice(0, 10)}.csv`, [['이메일', '비밀번호 설정 링크(7일 유효)'], ...r.results.filter((x: any) => x.ok).map((x: any) => [x.email, x.link])]);
+    }
     if (r && a === 'content_import') setToast(`${r.count}건을 가져왔습니다.`);
     if (r && a === 'invite' && r.userId) {
-      if (store.superAdmin) { try { const l = await act('reset_link', { userId: r.userId }); await navigator.clipboard?.writeText(l.link); setToast('교육생을 등록하고 비밀번호 설정 링크를 복사했습니다. 교육생에게 전달해 주세요.'); } catch {} }
-      else setToast('교육생을 등록했습니다. 교육생은 로그인 화면의 \'비밀번호를 잊으셨나요?\'로 비밀번호를 설정할 수 있어요.', 'info');
+      if (r.mailed) setToast('교육생을 등록하고 초대 메일을 보냈습니다. 메일의 링크로 비밀번호를 설정하면 바로 학습할 수 있어요.');
+      else { try { await navigator.clipboard?.writeText(r.link); setToast('교육생을 등록하고 비밀번호 설정 링크(7일 유효)를 복사했습니다. 교육생에게 전달해 주세요.'); } catch { setToast('교육생을 등록했습니다. 설정 링크: ' + r.link, 'info'); } }
     }
   }
 
@@ -122,6 +130,8 @@ export function EduModals() {
             <label>학습 목표 (줄바꿈으로 구분)<textarea rows={3} value={editor.objectives || ''} onChange={(e) => set('objectives', e.target.value)} placeholder="이 과정을 마치면 할 수 있는 것" /></label>
             <label>강사·운영 담당<input value={editor.instructor || ''} onChange={(e) => set('instructor', e.target.value)} placeholder="셀러브릭스 캠퍼스 운영팀" /></label>
             <label className="check-label"><input type="checkbox" checked={!!editor.published} onChange={(e) => set('published', e.target.checked ? 1 : 0)} /><span>교육생에게 과정 공개</span></label>
+            <label className="check-label"><input type="checkbox" checked={!!editor.sequential} onChange={(e) => set('sequential', e.target.checked ? 1 : 0)} /><span>순차 학습 — 앞 강의를 완료해야 다음 강의가 열려요</span></label>
+            <label className="check-label"><input type="checkbox" checked={!!editor.require_assignments} onChange={(e) => set('require_assignments', e.target.checked ? 1 : 0)} /><span>수료 조건에 과제 통과 포함 — 공개된 과제를 모두 통과해야 수료증 발급</span></label>
           </>
         )}
 
@@ -232,6 +242,7 @@ export function EduModals() {
               <label>대상<select value={editor.cohortId || ''} onChange={(e) => set('cohortId', e.target.value)}><option value="">전체 교육생</option>{(data?.cohorts ?? []).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
               <label className="check-label"><input type="checkbox" checked={!!editor.pinned} onChange={(e) => set('pinned', e.target.checked ? 1 : 0)} /><span>상단 고정</span></label>
             </div>
+            {!editor.cohortId && <label className="check-label"><input type="checkbox" checked={editor.public !== 0} onChange={(e) => set('public', e.target.checked ? 1 : 0)} /><span>로그인 전 공지사항 페이지에도 공개 (끄면 교육생에게만 보임)</span></label>}
             {!editor.id && <label className="check-label"><input type="checkbox" checked={editor.notify !== false} onChange={(e) => set('notify', e.target.checked)} /><span>대상 교육생에게 알림 보내기</span></label>}
           </>
         )}
@@ -270,7 +281,7 @@ export function EduModals() {
 
         {modal.type === 'invite' && (
           <>
-            <p className="muted">가입 절차 없이 교육생 계정을 바로 만듭니다. 저장 후 비밀번호 설정 링크가 복사되니 교육생에게 전달하세요.</p>
+            <p className="muted">가입 절차 없이 교육생 계정을 바로 만듭니다. {data?.mailReady ? '초대 메일로 비밀번호 설정 링크(7일 유효)를 보냅니다.' : '저장 후 비밀번호 설정 링크(7일 유효)가 복사되니 교육생에게 전달하세요.'}</p>
             <label>이름<input required value={editor.name} onChange={(e) => set('name', e.target.value)} /></label>
             <label>이메일<input type="email" required value={editor.email} onChange={(e) => set('email', e.target.value)} /></label>
             <label>기수 (선택)<select value={editor.cohortId || ''} onChange={(e) => set('cohortId', e.target.value)}><option value="">미배정</option>{(data?.cohorts ?? []).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
@@ -290,6 +301,8 @@ export function EduModals() {
 function LessonForm({ editor, set }: { editor: any; set: (k: string, v: any) => void }) {
   const { courses, ls, setBusy, load, setEditor, setToast, data, openModal, perform } = useEdu();
   const [tab, setTab] = useState<'basic' | 'chapters' | 'quiz' | 'resource'>('basic');
+  const [progress, setProgress] = useState<number | null>(null);
+  const [detecting, setDetecting] = useState(false);
   let qs: any[] = [];
   let qsError = false;
   try { qs = JSON.parse(editor.questions || '[]'); } catch { qsError = true; }
@@ -316,28 +329,34 @@ function LessonForm({ editor, set }: { editor: any; set: (k: string, v: any) => 
         </div>
         <label>학습 소개<textarea rows={2} value={editor.summary} onChange={(e) => set('summary', e.target.value)} /></label>
         <label>학습 목표 (줄바꿈 구분)<textarea rows={2} value={editor.objectives || ''} onChange={(e) => set('objectives', e.target.value)} /></label>
-        <label>외부 MP4 / WebM URL<input value={editor.video} onChange={(e) => set('video', e.target.value)} placeholder="https://… / 직접 재생 가능한 영상" /></label>
+        <label>영상 주소 (YouTube · Vimeo · Cloudflare Stream/HLS · MP4)<input value={editor.video} onChange={(e) => set('video', e.target.value)} placeholder="https://youtu.be/… · https://vimeo.com/… · https://…/manifest/video.m3u8 · https://…/video.mp4" /></label>
+        {editor.video && <div className="admin-actions inline-tools"><small className="muted">{({ youtube: 'YouTube 영상', vimeo: 'Vimeo 영상', hls: 'HLS 스트리밍(Cloudflare Stream 등)', file: editor.video.startsWith('/api/media/') ? '업로드한 영상' : '직접 재생 파일' } as Record<string, string>)[videoSource(editor.video).kind]}</small>
+          <button type="button" className="button secondary small" disabled={detecting} onClick={async () => { setDetecting(true); const d = await detectDuration(editor.video); setDetecting(false); if (d) { set('duration', d); setToast(`영상 길이 ${fmt(d)}로 맞췄어요. 저장해 주세요.`); } else setToast('영상 길이를 읽지 못했어요. 직접 입력해 주세요.', 'error'); }}><Timer size={14} /> {detecting ? '확인 중…' : '길이 자동 감지'}</button></div>}
+        <label>자막 (WebVTT, 선택)<input value={editor.captions || ''} onChange={(e) => set('captions', e.target.value)} placeholder="https://…/ko.vtt 또는 아래에서 .vtt 파일 업로드" /></label>
+        {editor.id && <div className="admin-actions inline-tools"><label className="button secondary small file-button"><Upload size={14} /> .vtt 자막 업로드<input type="file" accept=".vtt,text/vtt" hidden onChange={async (e) => { const file = e.target.files?.[0]; if (!file) return; setBusy(true); try { const j = await uploadLessonFile(editor.id, 'captions', file); setEditor((prev: any) => ({ ...prev, captions: j.captions })); await load(); setToast('자막을 올렸습니다.'); } catch (err: any) { setToast(err.message, 'error'); } finally { setBusy(false); e.target.value = ''; } }} /></label>{editor.captions && <button type="button" className="text-link danger-text" onClick={() => set('captions', '')}>자막 빼기</button>}<small className="muted">YouTube·Vimeo 영상은 해당 서비스에 올린 자막이 표시됩니다.</small></div>}
         <div className="upload-box">
           <Upload size={25} />
           <b>교육 영상 파일 업로드</b>
           <p>{maxMb}MB 이하 MP4·WebM. 더 큰 영상은 외부 영상 URL을 사용하세요.</p>
           {editor.id ? (
-            <input type="file" accept="video/mp4,video/webm" onChange={async (e) => {
-              const file = e.target.files?.[0];
-              if (!file) return;
-              setBusy(true);
-              try {
-                const fd = new FormData(); fd.set('file', file); fd.set('lessonId', editor.id);
-                const r = await fetch('/api/edu', { method: 'POST', body: fd }); const j: any = await r.json();
-                if (!r.ok) throw Error(j.error);
-                await load();
-                // 영상 길이 자동 감지
-                const url = URL.createObjectURL(file); const v = document.createElement('video'); v.preload = 'metadata'; v.src = url;
-                v.onloadedmetadata = () => { setEditor((prev: any) => ({ ...prev, video: j.video, duration: Math.round(v.duration) || prev.duration })); URL.revokeObjectURL(url); };
-                v.onerror = () => setEditor((prev: any) => ({ ...prev, video: j.video }));
-                setToast('영상을 업로드했습니다. 길이와 확인 문제를 저장해 주세요.');
-              } catch (err: any) { setToast(err.message, 'error'); } finally { setBusy(false); }
-            }} />
+            <>
+              <input type="file" accept="video/mp4,video/webm" disabled={progress !== null} onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                if (file.size > maxMb * 1024 * 1024) { setToast(`${maxMb}MB 이하 영상만 올릴 수 있어요. 큰 영상은 YouTube·Vimeo·Cloudflare Stream 주소를 사용하세요.`, 'error'); e.target.value = ''; return; }
+                setBusy(true); setProgress(0);
+                try {
+                  const j = await uploadLessonFile(editor.id, 'video', file, setProgress);
+                  await load();
+                  // 영상 길이 자동 감지
+                  const url = URL.createObjectURL(file); const v = document.createElement('video'); v.preload = 'metadata'; v.src = url;
+                  v.onloadedmetadata = () => { setEditor((prev: any) => ({ ...prev, video: j.video, duration: Math.round(v.duration) || prev.duration })); URL.revokeObjectURL(url); };
+                  v.onerror = () => setEditor((prev: any) => ({ ...prev, video: j.video }));
+                  setToast('영상을 업로드했습니다. 길이와 확인 문제를 확인한 뒤 저장해 주세요.');
+                } catch (err: any) { setToast(err.message, 'error'); } finally { setBusy(false); setProgress(null); e.target.value = ''; }
+              }} />
+              {progress !== null && <div className="upload-progress" role="progressbar" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100}><i style={{ width: progress + '%' }} /><span>{progress < 100 ? `업로드 중 ${progress}%` : '저장 중…'}</span></div>}
+            </>
           ) : <small>강의를 먼저 저장하면 영상 파일을 업로드할 수 있어요.</small>}
         </div>
         <label className="check-label"><input type="checkbox" checked={!!editor.preview} onChange={(e) => set('preview', e.target.checked ? 1 : 0)} /><span>로그인 없이 미리보기 허용 (과정 소개용 공개 강의)</span></label>
@@ -389,7 +408,7 @@ function LessonForm({ editor, set }: { editor: any; set: (k: string, v: any) => 
           {editor.id ? (
             <>
               <ul className="file-list">{(data?.lessonFiles ?? []).filter((f) => f.lesson_id === editor.id).map((f) => <li key={f.id}><a href={'/api/media/' + f.id} target="_blank" rel="noopener noreferrer">{f.name}</a><small>{Math.round(f.size / 1024)}KB</small><button type="button" className="icon-button" aria-label="삭제" onClick={() => perform('lesson_file_delete', { id: f.id }, '파일을 삭제했습니다.', { keepModal: true })}><Trash2 size={14} /></button></li>)}</ul>
-              <input type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.txt,.docx,.xlsx,.pptx,.zip" onChange={async (e) => { const file = e.target.files?.[0]; if (!file) return; setBusy(true); try { const fd = new FormData(); fd.set('file', file); fd.set('lessonId', editor.id); fd.set('kind', 'file'); const r = await fetch('/api/edu', { method: 'POST', body: fd }); const j: any = await r.json(); if (!r.ok) throw Error(j.error); await load(); setToast('파일을 첨부했습니다.'); } catch (err: any) { setToast(err.message, 'error'); } finally { setBusy(false); e.target.value = ''; } }} />
+              <input type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.txt,.docx,.xlsx,.pptx,.zip" onChange={async (e) => { const file = e.target.files?.[0]; if (!file) return; setBusy(true); try { await uploadLessonFile(editor.id, 'file', file); await load(); setToast('파일을 첨부했습니다.'); } catch (err: any) { setToast(err.message, 'error'); } finally { setBusy(false); e.target.value = ''; } }} />
             </>
           ) : <small>강의를 먼저 저장하면 파일을 첨부할 수 있어요.</small>}
         </div>

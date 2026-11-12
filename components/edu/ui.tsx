@@ -96,9 +96,17 @@ export function Stars({ value, size = 16, onChange }: { value: number; size?: nu
 export function Tabs<T extends string>({ items, value, onChange }: { items: [T, string][] | T[]; value: T; onChange: (v: T) => void }) {
   const list = (items as any[]).map((i) => (Array.isArray(i) ? i : [i, i])) as [T, string][];
   return (
-    <div className="tabs" role="tablist">
+    <div className="tabs" role="tablist" onKeyDown={(e) => {
+      // 좌우 방향키로 탭 이동
+      if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
+      e.preventDefault();
+      const i = list.findIndex(([v]) => v === value);
+      const n = e.key === 'Home' ? 0 : e.key === 'End' ? list.length - 1 : (i + (e.key === 'ArrowRight' ? 1 : -1) + list.length) % list.length;
+      onChange(list[n][0]);
+      (e.currentTarget.children[n] as HTMLElement)?.focus();
+    }}>
       {list.map(([v, n]) => (
-        <button key={v} role="tab" aria-selected={value === v} className={value === v ? 'selected' : ''} onClick={() => onChange(v)}>{n}</button>
+        <button key={v} role="tab" aria-selected={value === v} tabIndex={value === v ? 0 : -1} className={value === v ? 'selected' : ''} onClick={() => onChange(v)}>{n}</button>
       ))}
     </div>
   );
@@ -107,16 +115,27 @@ export function Tabs<T extends string>({ items, value, onChange }: { items: [T, 
 export function Modal({ title, wide = false, children, onClose }: { title: string; wide?: boolean; children: ReactNode; onClose: () => void }) {
   const ref = useRef<HTMLElement>(null);
   useEffect(() => {
-    // 첫 입력에 포커스, 배경 스크롤 잠금
+    // 첫 입력에 포커스, 배경 스크롤 잠금, 닫으면 원래 위치로 포커스 복귀
+    const opener = document.activeElement as HTMLElement | null;
     const el = ref.current?.querySelector<HTMLElement>('input:not([type=hidden]):not([type=checkbox]):not([type=radio]), textarea, select');
-    el?.focus();
+    (el || ref.current)?.focus();
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = prev; };
+    // Tab 키 포커스가 대화상자 밖으로 나가지 않게
+    const trap = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab' || !ref.current) return;
+      const items = Array.from(ref.current.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), input:not([disabled]):not([type=hidden]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])')).filter((x) => x.offsetParent !== null);
+      if (!items.length) return;
+      const firstEl = items[0], lastEl = items[items.length - 1];
+      if (e.shiftKey && document.activeElement === firstEl) { e.preventDefault(); lastEl.focus(); }
+      else if (!e.shiftKey && document.activeElement === lastEl) { e.preventDefault(); firstEl.focus(); }
+    };
+    document.addEventListener('keydown', trap);
+    return () => { document.body.style.overflow = prev; document.removeEventListener('keydown', trap); opener?.focus?.(); };
   }, []);
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <section ref={ref} role="dialog" aria-modal="true" aria-label={title} className={'modal ' + (wide ? 'wide' : '')} onClick={(e) => e.stopPropagation()}>
+      <section ref={ref} tabIndex={-1} role="dialog" aria-modal="true" aria-label={title} className={'modal ' + (wide ? 'wide' : '')} onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <h2>{title}</h2>
           <button type="button" onClick={onClose} aria-label="닫기"><X /></button>

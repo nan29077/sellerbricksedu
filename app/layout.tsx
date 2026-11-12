@@ -7,6 +7,7 @@ import "./introduction.css";
 import "./features.css";
 import "./features-v3.css";
 import "./introduction-enhanced.css";
+import "./features-v4.css";
 
 const shareTitle = "첫 라이브의 자신감 | 셀러브릭스 캠퍼스";
 const shareDescription = "처음 시작하는 셀러를 위한 라이브 커머스 교육. 준비부터 실전까지, 나의 속도로 배우고 성장하세요.";

@@ -1,4 +1,6 @@
-import { first, run, batch, stmt, now, uid } from './db';
+import { first, run, batch, stmt, now, uid, bumpVersion } from './db';
+import { createMfaChallenge } from './handlers/auth';
+import { logActivity } from './notify';
 import { createSession, randomAvatar } from './auth';
 import { setCookie, cookie, siteUrl } from './http';
 import { notifyAdmins } from './notify';
@@ -30,7 +32,7 @@ export function redirectUri(req: Request, provider: Provider) {
 export function startOAuth(req: Request, provider: Provider, settings: Record<string, string>, returnTo: string) {
   const client = settings[`${provider}_client`];
   if (!client || !settings[`${provider}_secret`]) return redirectWithMessage(req, 'unavailable');
-  const state = uid() + ':' + encodeURIComponent(returnTo.startsWith('/') ? returnTo : '/learn');
+  const state = uid() + ':' + encodeURIComponent(returnTo.startsWith('/') && !returnTo.startsWith('//') ? returnTo : '/learn');
   const url = new URL(CONFIG[provider].authorize);
   url.searchParams.set('client_id', client);
   url.searchParams.set('redirect_uri', redirectUri(req, provider));
@@ -50,7 +52,9 @@ export async function finishOAuth(req: Request, provider: Provider, settings: Re
   const code = url.searchParams.get('code'), state = url.searchParams.get('state') || '';
   const saved = cookie(req, STATE_COOKIE) || '';
   if (!code || !state || state !== saved) return redirectWithMessage(req, 'state');
-  const returnTo = decodeURIComponent(state.split(':').slice(1).join(':') || '/learn');
+  let returnTo = '/learn';
+  try { returnTo = decodeURIComponent(state.split(':').slice(1).join(':') || '/learn'); } catch { /* 잘못된 state */ }
+  if (!returnTo.startsWith('/') || returnTo.startsWith('//')) returnTo = '/learn';
   const client = settings[`${provider}_client`], secret = settings[`${provider}_secret`];
   if (!client || !secret) return redirectWithMessage(req, 'unavailable');
 
@@ -86,23 +90,37 @@ export async function finishOAuth(req: Request, provider: Provider, settings: Re
     let userId = (await first<any>('SELECT user_id FROM oauth_accounts WHERE provider=? AND provider_id=?', provider, providerId))?.user_id;
     if (!userId) {
       // 검증된 이메일일 때만 기존 계정에 연결 (계정 탈취 방지)
-      const existing = emailVerified ? await first<any>('SELECT id FROM users WHERE email=?', email) : null;
-      if (existing) userId = existing.id;
-      else {
+      const existing = emailVerified ? await first<any>('SELECT id, password, email_verified FROM users WHERE email=?', email) : null;
+      if (existing) {
+        userId = existing.id;
+        // 이메일 인증을 거치지 않은 비밀번호 계정이면, 타인이 먼저 가입해 둔 계정일 수 있다.
+        // 소셜 제공자가 이메일 소유를 확인했으므로 기존 비밀번호와 세션을 무효화하고 소유자에게 넘긴다.
+        if (existing.password && !existing.email_verified) {
+          await batch([stmt('UPDATE users SET password=NULL WHERE id=?', userId), stmt('DELETE FROM sessions WHERE user_id=?', userId), stmt('DELETE FROM password_resets WHERE user_id=?', userId)]);
+          await logActivity(userId, 'oauth_takeover_guard', provider);
+        }
+        await run('UPDATE users SET email_verified=1 WHERE id=?', userId);
+      } else {
         userId = uid();
         const auto = settings.oauth_auto_approve === '1';
         await batch([
-          stmt('INSERT INTO users (id,email,name,role,password,status,created) VALUES (?,?,?,?,NULL,?,?)', userId, email, name, 'student', auto ? 'active' : 'pending', now()),
+          stmt('INSERT INTO users (id,email,name,role,password,status,created,email_verified) VALUES (?,?,?,?,NULL,?,?,?)', userId, email, name, 'student', auto ? 'active' : 'pending', now(), emailVerified ? 1 : 0),
           stmt('INSERT INTO user_profiles (user_id,avatar) VALUES (?,?)', userId, randomAvatar()),
         ]);
         await notifyAdmins('approval', auto ? '소셜 로그인으로 새 교육생이 가입했습니다' : '승인 대기 교육생이 있습니다', `${name} (${provider})`, '/admin/members');
       }
       await run('INSERT OR IGNORE INTO oauth_accounts (provider,provider_id,user_id,created) VALUES (?,?,?,?)', provider, providerId, userId, now());
+      await bumpVersion();
     }
     const user = await first<any>('SELECT * FROM users WHERE id=?', userId);
     if (!user) throw new Error('user');
     if (user.status === 'pending') return redirectWithMessage(req, 'pending');
     if (user.status !== 'active') return redirectWithMessage(req, 'suspended');
+    // 2단계 인증을 켠 운영진은 코드 확인 후 로그인
+    if (await first('SELECT 1 FROM user_profiles WHERE user_id=? AND totp_enabled=1', user.id)) {
+      const token = await createMfaChallenge(user.id, returnTo);
+      return redirectWithMessage(req, 'mfa', `&mfa=${token}`);
+    }
     const s = await createSession(req, user);
     const headers = new Headers({ Location: `${siteUrl(req)}${returnTo}` });
     headers.append('Set-Cookie', s.header);

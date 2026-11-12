@@ -1,4 +1,5 @@
 'use client';
+import { useEffect } from 'react';
 import { EduProvider, useEdu } from '../lib/edu-store';
 import MainIntroduction from './main-introduction';
 import AccountSettings from './account-settings';
@@ -6,7 +7,8 @@ import { WithdrawSection } from '../components/edu/learn/Withdraw';
 import { Button, Empty, ErrorBoundary, Logo, PageHead, Toast } from '../components/edu/ui';
 import { PublicLayout, AuthLayout } from '../components/edu/shell/PublicLayout';
 import { PortalLayout } from '../components/edu/shell/PortalLayout';
-import { LoginPage, ResetPage } from '../components/edu/public/LoginPage';
+import { LoginPage, ResetPage, VerifyEmailPage } from '../components/edu/public/LoginPage';
+import { NotificationsPage } from '../components/edu/learn/Notifications';
 import { CatalogPage } from '../components/edu/public/CatalogPage';
 import { CourseDetailPage } from '../components/edu/public/CourseDetailPage';
 import { InfoPage, PolicyPage, VerifyPage } from '../components/edu/public/InfoPages';
@@ -23,15 +25,38 @@ import { AdminMembers, AdminActivity } from '../components/edu/admin/Members';
 import { AdminCohorts, AdminAnnouncements, AdminAssignments, AdminAi, AdminSettings } from '../components/edu/admin/Pages';
 import { EduModals } from '../components/edu/admin/Modals';
 
+/** 화면별 브라우저 탭 제목 */
+function usePageTitle() {
+  const { path, data } = useEdu();
+  useEffect(() => {
+    if (!data) return;
+    const site = data.settings?.site_name || '셀러브릭스 캠퍼스';
+    const seg = path.split('/').filter(Boolean);
+    const map: Record<string, string> = { '/': '', '/courses': '교육 과정', '/guide': '학습 가이드', '/notices': '공지사항', '/faq': '자주 묻는 질문', '/terms': '이용약관', '/privacy': '개인정보처리방침', '/login': '로그인', '/learn': '학습 대시보드', '/learn/courses': '나의 강의실', '/admin': '운영 대시보드' };
+    let t = map[path];
+    if (t === undefined && seg[0] === 'course') t = data.courses.find((c) => c.id === decodeURIComponent(seg[1] || ''))?.title || '교육 과정';
+    if (t === undefined && seg[0] === 'lesson') t = data.lessons.find((l) => l.id === decodeURIComponent(seg[1] || ''))?.title || '강의';
+    if (t === undefined && seg[0] === 'verify') t = '수료증 확인';
+    if (t === undefined) t = seg[0] === 'admin' ? '관리자 센터' : seg[0] === 'learn' ? '나의 학습' : '';
+    document.title = t ? `${t} | ${site}` : `첫 라이브의 자신감 | ${site}`;
+  }, [path, data]);
+}
+
 function Router() {
   const { path, data, error, load, user, admin, superAdmin, lessons, busy, perform, go } = useEdu();
   const seg = path.split('/').filter(Boolean);
+  usePageTitle();
+  // 이미 로그인한 상태로 로그인 화면에 오면 대시보드로
+  useEffect(() => {
+    if (path === '/login' && user && !location.search.includes('mfa=')) go(admin ? '/admin' : '/learn', { replace: true });
+  }, [path, user, admin, go]);
 
   if (error && !data) return <div className="error-page"><Logo /><h2>교육 정보를 불러오지 못했어요.</h2><p>{error}</p><Button onClick={() => load()}>다시 시도</Button></div>;
   if (!data) return <div className="loading"><Logo /><div className="spinner" /><p>셀러의 새로운 시작을 준비하고 있어요.</p></div>;
 
   // ── 공개 화면 ──
   if (seg[0] === 'reset' && seg[1]) return <AuthLayout><ResetPage token={seg[1]} /></AuthLayout>;
+  if (seg[0] === 'verify-email' && seg[1]) return <AuthLayout><VerifyEmailPage token={seg[1]} /></AuthLayout>;
   if (seg[0] === 'verify') return <PublicLayout><VerifyPage code={seg[1]} /></PublicLayout>;
   if (path === '/courses') return <PublicLayout><CatalogPage /></PublicLayout>;
   if (seg[0] === 'course' && seg[1]) return <PublicLayout><CourseDetailPage id={decodeURIComponent(seg[1])} /></PublicLayout>;
@@ -62,6 +87,7 @@ function Router() {
     else if (p === '/learn/certificates') body = <CertificatesPage />;
     else if (p === '/learn/assignments') body = <AssignmentsPage />;
     else if (p === '/learn/notices') body = <NoticesPage />;
+    else if (p === '/learn/notifications' || p === '/admin/notifications') body = <NotificationsPage />;
     else if (p === '/learn/questions' || p === '/admin/questions') body = <QuestionsPage />;
     else if (p === '/learn/community' || p === '/admin/community') body = <CommunityPage />;
     else if (p === '/learn/lounge' || p === '/admin/lounge') body = <LoungePage />;

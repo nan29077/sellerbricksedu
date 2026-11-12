@@ -54,7 +54,7 @@ export function Footer() {
           <button onClick={() => go('/verify')}>수료증 확인</button>
         </div>
         <div>
-          <b>Sellerbricks Academy</b>
+          <b>Sellerbricks Campus</b>
           <p>신규 셀러 온보딩 · 실전 판매 교육<br />나의 속도로 배우는 셀러 성장 과정</p>
         </div>
       </div>

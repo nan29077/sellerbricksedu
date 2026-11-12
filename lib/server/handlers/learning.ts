@@ -1,5 +1,6 @@
 import { first, all, run, batch, stmt, now, uid, kstDay, chunks, HttpError } from '../db';
 import { out, str, num } from '../http';
+import { userLimit } from '../auth';
 import { passScore, watchRatio } from '../settings';
 import { notify, notifyAdmins, logActivity } from '../notify';
 import type { AuthedCtx } from './types';
@@ -14,33 +15,77 @@ async function ensureProgress(userId: string, lessonId: string) {
   return (await first<any>('SELECT * FROM progress WHERE user_id=? AND lesson_id=?', userId, lessonId))!;
 }
 
-/** 과정의 모든 강의가 완료되면 수료증 발급 + 알림 */
-async function maybeIssueCertificate(userId: string, courseId: string, courseTitle: string) {
+const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const certCode = () => 'SB-' + Array.from(crypto.getRandomValues(new Uint8Array(10)), (b) => CODE_ALPHABET[b % CODE_ALPHABET.length]).join('');
+
+/** 과정 수료 조건(모든 강의 완료 + 필요 시 모든 공개 과제 통과)을 충족하면 수료증 발급 + 알림. 이미 있으면 아무것도 하지 않는다. */
+export async function maybeIssueCertificate(userId: string, courseId: string) {
+  if (await first('SELECT 1 FROM certificates WHERE user_id=? AND course_id=?', userId, courseId)) return false;
+  const course = await first<any>('SELECT title, require_assignments FROM courses WHERE id=?', courseId);
+  if (!course) return false;
   const total = await first<{ n: number }>('SELECT COUNT(*) AS n FROM lessons WHERE course_id=?', courseId);
   const done = await first<{ n: number }>('SELECT COUNT(*) AS n FROM progress JOIN lessons ON lessons.id=progress.lesson_id WHERE lessons.course_id=? AND progress.user_id=? AND progress.complete=1', courseId, userId);
-  if (!total?.n || done?.n !== total.n) return;
-  const exists = await first('SELECT id FROM certificates WHERE user_id=? AND course_id=?', userId, courseId);
-  if (exists) return;
-  const code = 'SB-' + crypto.getRandomValues(new Uint32Array(2)).reduce((s, v) => s + v.toString(36).toUpperCase(), '').slice(0, 10);
-  await run('INSERT INTO certificates (id,user_id,course_id,issued,course_title) VALUES (?,?,?,?,?)', code, userId, courseId, now(), courseTitle);
-  await notify([userId], 'certificate', `${courseTitle} 과정을 수료했습니다`, '수료증 메뉴에서 수료증을 확인하고 인쇄할 수 있어요.', '/learn/certificates');
-  await logActivity(userId, 'certificate', courseTitle);
+  if (!total?.n || done?.n !== total.n) return false;
+  if (course.require_assignments) {
+    const missing = await first<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM assignments WHERE course_id=? AND published=1
+       AND NOT EXISTS (SELECT 1 FROM submissions WHERE submissions.assignment_id=assignments.id AND submissions.user_id=? AND submissions.status='passed')`, courseId, userId);
+    if (missing?.n) return false;
+  }
+  // 번호 충돌 시 재시도, (교육생, 과정) 유일 인덱스로 동시 요청 중복 발급 방지
+  for (let i = 0; i < 4; i++) {
+    const r = await run('INSERT OR IGNORE INTO certificates (id,user_id,course_id,issued,course_title) VALUES (?,?,?,?,?)', certCode(), userId, courseId, now(), course.title || '');
+    if (r.meta.changes) {
+      await notify([userId], 'certificate', `${course.title} 과정을 수료했습니다`, '수료증 메뉴에서 수료증을 확인하고 PDF로 저장할 수 있어요.', '/learn/certificates');
+      await logActivity(userId, 'certificate', course.title || '');
+      return true;
+    }
+    if (await first('SELECT 1 FROM certificates WHERE user_id=? AND course_id=?', userId, courseId)) return false;
+  }
+  return false;
+}
+
+/** 과정 구성이 바뀐 뒤(강의 삭제·수료 조건 변경) 조건을 충족한 교육생에게 빠진 수료증을 발급 */
+export async function reconcileCertificates(courseId: string) {
+  const total = await first<{ n: number }>('SELECT COUNT(*) AS n FROM lessons WHERE course_id=?', courseId);
+  if (!total?.n) return 0;
+  const users = await all<{ user_id: string }>(
+    `SELECT progress.user_id FROM progress JOIN lessons ON lessons.id=progress.lesson_id
+     WHERE lessons.course_id=? AND progress.complete=1 AND progress.user_id NOT IN (SELECT user_id FROM certificates WHERE course_id=?)
+     GROUP BY progress.user_id HAVING COUNT(*)=?`, courseId, courseId, total.n);
+  let n = 0;
+  for (const u of users.slice(0, 300)) if (await maybeIssueCertificate(u.user_id, courseId)) n++;
+  return n;
 }
 
 async function markComplete(userId: string, lesson: any, p: any, complete: number) {
-  if (complete && !p.complete) {
+  if (!complete) return;
+  if (!p.complete) {
     await batch([
-      stmt('UPDATE progress SET complete=1,completed_at=? WHERE user_id=? AND lesson_id=?', now(), userId, lesson.id),
-      stmt('INSERT INTO learning_days (user_id,day,seconds,completed) VALUES (?,?,0,1) ON CONFLICT(user_id,day) DO UPDATE SET completed=learning_days.completed+1', userId, kstDay()),
+      stmt('UPDATE progress SET complete=1,completed_at=?,ever_completed=1 WHERE user_id=? AND lesson_id=?', now(), userId, lesson.id),
+      // 재수강으로 다시 완료한 강의는 학습 통계의 '완료 수'에 다시 더하지 않는다
+      ...(!p.ever_completed ? [stmt('INSERT INTO learning_days (user_id,day,seconds,completed) VALUES (?,?,0,1) ON CONFLICT(user_id,day) DO UPDATE SET completed=learning_days.completed+1', userId, kstDay())] : []),
     ]);
-    const course = await first<any>('SELECT title FROM courses WHERE id=?', lesson.course_id);
     await logActivity(userId, 'lesson_complete', lesson.title);
-    await maybeIssueCertificate(userId, lesson.course_id, course?.title || '');
   }
+  // 이전에 발급이 실패했어도 다음 완료 이벤트에서 다시 시도된다
+  await maybeIssueCertificate(userId, lesson.course_id);
+}
+
+/** 순차 학습 과정: 바로 앞 강의를 완료해야 다음 강의 진도·확인 문제가 기록된다 (운영진 제외) */
+async function checkSequential(user: { id: string; role: string }, lesson: any) {
+  if (user.role !== 'student') return;
+  const c = await first<{ sequential: number }>('SELECT sequential FROM courses WHERE id=?', lesson.course_id);
+  if (!c?.sequential) return;
+  const prev = await first<any>('SELECT id FROM lessons WHERE course_id=? AND position<? ORDER BY position DESC LIMIT 1', lesson.course_id, lesson.position);
+  if (!prev) return;
+  const done = await first('SELECT 1 FROM progress WHERE user_id=? AND lesson_id=? AND complete=1', user.id, prev.id);
+  if (!done) throw new HttpError(403, '이 과정은 순서대로 학습해요. 이전 강의를 먼저 완료해 주세요.');
 }
 
 export async function progress({ body, user, settings }: AuthedCtx) {
   const lesson = await publishedLesson(str(body.lessonId, 100));
+  await checkSequential(user, lesson);
   const p = await ensureProgress(user.id, lesson.id);
   const position = Math.max(0, Math.min(num(body.position), lesson.duration));
   // 벽시계 기준 상한: 마지막 갱신 이후 경과 시간의 2배(최대 2배속) + 여유
@@ -53,8 +98,8 @@ export async function progress({ body, user, settings }: AuthedCtx) {
     stmt('UPDATE progress SET position=?,watched=?,updated=? WHERE user_id=? AND lesson_id=?', position, watched, now(), user.id, lesson.id),
     ...(delta > 0 ? [stmt('INSERT INTO learning_days (user_id,day,seconds,completed) VALUES (?,?,?,0) ON CONFLICT(user_id,day) DO UPDATE SET seconds=learning_days.seconds+excluded.seconds', user.id, kstDay(), delta)] : []),
   ]);
-  await markComplete(user.id, lesson, p, complete);
-  return out({ ok: true, watched, complete });
+  if (complete && !p.complete) await markComplete(user.id, lesson, p, complete);
+  return out({ ok: true, watched, complete: complete || p.complete });
 }
 
 export async function bookmark({ body, user }: AuthedCtx) {
@@ -88,31 +133,37 @@ export async function tnote({ body, user }: AuthedCtx) {
 
 export async function quiz({ body, user, settings }: AuthedCtx) {
   const lesson = await publishedLesson(str(body.lessonId, 100));
+  await checkSequential(user, lesson);
   const p = await ensureProgress(user.id, lesson.id);
   const ratio = watchRatio(settings), pass = passScore(settings);
   const reading = !lesson.video; // 영상 미등록 강의는 학습 자료 기반 '읽기 강의'
   if (!reading && !p.complete && p.watched < lesson.duration * ratio) throw new HttpError(400, `영상의 ${Math.round(ratio * 100)}% 이상을 시청하면 확인 문제를 풀 수 있습니다.`);
-  const qs: any[] = JSON.parse(lesson.questions);
-  const answers: number[] = Array.isArray(body.answers) ? body.answers : [];
+  let qs: any[];
+  try { qs = JSON.parse(lesson.questions); if (!Array.isArray(qs)) throw 0; } catch { throw new HttpError(400, '이 강의의 확인 문제 형식이 올바르지 않습니다. 관리자에게 문의해 주세요.'); }
+  const answers: number[] = Array.isArray(body.answers) ? body.answers.slice(0, 50).map((a: unknown) => (Number.isInteger(a) ? (a as number) : -1)) : [];
   const correct = qs.filter((q, i) => q.answer === answers[i]).length;
   const score = qs.length ? Math.round((correct / qs.length) * 100) : 100;
   const best = Math.max(score, p.best_score ?? 0);
-  const complete = score >= pass ? 1 : p.complete;
+  const passed = score >= pass;
+  const complete = passed ? 1 : p.complete;
   if (reading && complete && !p.complete) await run('UPDATE progress SET watched=? WHERE user_id=? AND lesson_id=?', lesson.duration, user.id, lesson.id);
   await batch([
     stmt('UPDATE progress SET score=?,best_score=?,attempts=attempts+1,updated=? WHERE user_id=? AND lesson_id=?', score, best, now(), user.id, lesson.id),
-    stmt('INSERT INTO quiz_attempts (id,user_id,lesson_id,answers,score,passed,created) VALUES (?,?,?,?,?,?,?)', uid(), user.id, lesson.id, JSON.stringify(answers.slice(0, 50)), score, score >= pass ? 1 : 0, now()),
+    stmt('INSERT INTO quiz_attempts (id,user_id,lesson_id,answers,score,passed,created) VALUES (?,?,?,?,?,?,?)', uid(), user.id, lesson.id, JSON.stringify(answers), score, passed ? 1 : 0, now()),
   ]);
   await markComplete(user.id, lesson, p, complete);
   await logActivity(user.id, 'quiz', `${lesson.title} ${score}점`);
+  // 정답·해설은 통과한 뒤(또는 이미 완료한 강의)에만 공개해 '찍고 정답 보기'를 막는다
+  const reveal = settings.quiz_reveal === 'always' || passed || !!p.complete;
   return out({
     ok: true,
     score,
-    passed: score >= pass,
+    passed,
     passScore: pass,
     attempts: (p.attempts || 0) + 1,
     bestScore: best,
-    results: qs.map((q, i) => ({ correct: q.answer === answers[i], answer: q.answer, explanation: q.explanation })),
+    revealed: reveal,
+    results: qs.map((q, i) => (reveal ? { correct: q.answer === answers[i], answer: q.answer, explanation: q.explanation } : { correct: q.answer === answers[i] })),
   });
 }
 
@@ -131,12 +182,14 @@ export async function rsvp({ body, user }: AuthedCtx) {
   const id = str(body.eventId, 100);
   const ev = await first<any>('SELECT * FROM events WHERE id=?', id);
   if (!ev) throw new HttpError(404, '일정을 찾을 수 없습니다.');
+  const existingRsvp = await first('SELECT 1 FROM event_rsvps WHERE event_id=? AND user_id=?', id, user.id);
+  const kstNow = new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 16);
+  if (!existingRsvp && String(ev.ends || ev.starts) < kstNow) throw new HttpError(400, '이미 끝난 일정입니다.');
   if (ev.cohort_id) {
     const m = await first('SELECT 1 FROM memberships WHERE user_id=? AND cohort_id=?', user.id, ev.cohort_id);
     if (!m && user.role === 'student') throw new HttpError(403, '해당 기수 교육생만 신청할 수 있습니다.');
   }
-  const existing = await first('SELECT 1 FROM event_rsvps WHERE event_id=? AND user_id=?', id, user.id);
-  if (existing) {
+  if (existingRsvp) {
     await run('DELETE FROM event_rsvps WHERE event_id=? AND user_id=?', id, user.id);
     return out({ ok: true, going: false });
   }
@@ -150,16 +203,16 @@ export async function rsvp({ body, user }: AuthedCtx) {
 
 export async function review({ body, user }: AuthedCtx) {
   const courseId = str(body.courseId, 100);
+  if (body.remove) {
+    await run('DELETE FROM reviews WHERE user_id=? AND course_id=?', user.id, courseId);
+    return out({ ok: true });
+  }
   const rating = num(body.rating);
   if (!Number.isInteger(rating) || rating < 1 || rating > 5) throw new HttpError(400, '별점은 1~5점으로 선택해 주세요.');
   const course = await first('SELECT id FROM courses WHERE id=? AND published=1', courseId);
   if (!course) throw new HttpError(404, '과정을 찾을 수 없습니다.');
   const started = await first('SELECT 1 FROM progress JOIN lessons ON lessons.id=progress.lesson_id WHERE lessons.course_id=? AND progress.user_id=? AND progress.watched>0', courseId, user.id);
   if (!started) throw new HttpError(400, '강의를 시청한 뒤에 후기를 남길 수 있습니다.');
-  if (body.remove) {
-    await run('DELETE FROM reviews WHERE user_id=? AND course_id=?', user.id, courseId);
-    return out({ ok: true });
-  }
   await run('INSERT INTO reviews (user_id,course_id,rating,body,created) VALUES (?,?,?,?,?) ON CONFLICT(user_id,course_id) DO UPDATE SET rating=excluded.rating,body=excluded.body,created=excluded.created', user.id, courseId, rating, str(body.body, 1000), now());
   return out({ ok: true });
 }
@@ -170,10 +223,13 @@ export async function submit({ body, user }: AuthedCtx) {
   const text = str(body.body, 5000), link = str(body.link, 500);
   if (!text && !link) throw new HttpError(400, '과제 내용 또는 링크를 입력해 주세요.');
   if (link && !/^https:\/\//.test(link)) throw new HttpError(400, '링크는 https:// 로 시작해야 합니다.');
-  const existing = await first<any>('SELECT id FROM submissions WHERE assignment_id=? AND user_id=?', a.id, user.id);
-  if (existing) await run("UPDATE submissions SET body=?,link=?,status='submitted',feedback='',score=NULL,created=?,reviewed='' WHERE id=?", text, link, now(), existing.id);
+  await userLimit(user, 'submit', 20);
+  const existing = await first<any>('SELECT id, status FROM submissions WHERE assignment_id=? AND user_id=?', a.id, user.id);
+  if (existing?.status === 'passed') throw new HttpError(400, '이미 통과한 과제입니다. 수정이 필요하면 관리자에게 문의해 주세요.');
+  if (existing) await run("UPDATE submissions SET body=?,link=?,status='submitted',created=?,reviewed='' WHERE id=?", text, link, now(), existing.id);
   else await run('INSERT INTO submissions (id,assignment_id,user_id,body,link,status,created) VALUES (?,?,?,?,?,?,?)', uid(), a.id, user.id, text, link, 'submitted', now());
-  await notifyAdmins('assignment', `과제 제출: ${a.title}`, `${user.name}님이 과제를 제출했습니다.`, '/admin/assignments');
+  // 운영진 알림은 첫 제출과 보완 후 재제출 때만 (검토 대기 중 수정은 알리지 않음)
+  if (!existing || existing.status === 'revise') await notifyAdmins('assignment', `과제 ${existing ? '재제출' : '제출'}: ${a.title}`, `${user.name}님이 과제를 ${existing ? '보완해 다시 ' : ''}제출했습니다.`, '/admin/assignments');
   await logActivity(user.id, 'submit', a.title);
   return out({ ok: true });
 }

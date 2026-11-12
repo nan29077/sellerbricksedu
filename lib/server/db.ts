@@ -16,6 +16,29 @@ export function database(): D1Database {
 }
 
 export const bucket = (): R2Bucket | undefined => (env as any).BUCKET as R2Bucket | undefined;
+/** Workers 비밀 값(환경 변수) — 설정 화면 값보다 우선 */
+export const envVar = (name: string): string => { const v = (env as any)[name]; return typeof v === 'string' ? v : ''; };
+
+/**
+ * 응답 이후에 이어서 실행할 작업(메일 발송·정리 작업). waitUntil 을 지원하지 않는 환경이면 바로 기다린다.
+ * 실패해도 요청 결과에는 영향을 주지 않는다.
+ */
+export async function background(task: () => Promise<unknown>) {
+  const p = task().catch((e) => console.warn('background task failed', e));
+  try {
+    const mod: any = await import('cloudflare:workers');
+    if (typeof mod.waitUntil === 'function') { mod.waitUntil(p); return; }
+  } catch { /* 지원하지 않는 런타임 */ }
+  await p;
+}
+
+/** 변경 스탬프 — 데이터가 바뀌면 1 증가. 클라이언트는 스탬프만 확인하고 바뀌었을 때 전체를 다시 받는다. */
+export async function bumpVersion() {
+  try { await run(`INSERT INTO settings (id,value) VALUES ('data_version','1') ON CONFLICT(id) DO UPDATE SET value=CAST(CAST(settings.value AS INTEGER)+1 AS TEXT)`); } catch (e) { console.warn('bump failed', e); }
+}
+export async function dataVersion() {
+  return (await first<{ value: string }>(`SELECT value FROM settings WHERE id='data_version'`))?.value || '0';
+}
 
 export const now = () => new Date().toISOString();
 export const uid = () => crypto.randomUUID();
@@ -48,7 +71,7 @@ export const chunks = <T,>(arr: T[], size = 90): T[][] => Array.from({ length: M
  * 런타임 스키마 보정 — drizzle 마이그레이션이 적용되지 않은 환경(운영 D1 등)에서도
  * 새 기능이 동작하도록 테이블/컬럼을 멱등하게 추가한다. settings.schema_version 으로 1회만 수행.
  */
-const SCHEMA_VERSION = '8';
+const SCHEMA_VERSION = '9';
 const CREATE_TABLES = [
   // 기본 테이블 (0000/0001 마이그레이션과 동일, 빈 DB에서도 동작하도록)
   `CREATE TABLE IF NOT EXISTS users (id text PRIMARY KEY NOT NULL, email text NOT NULL, name text NOT NULL, role text NOT NULL, password text, status text DEFAULT 'active' NOT NULL, created text NOT NULL)`,
@@ -95,6 +118,20 @@ const CREATE_TABLES = [
   `CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, read)`,
   `CREATE INDEX IF NOT EXISTS idx_messages_lesson ON messages(lesson_id)`,
   `CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id)`,
+  // v9
+  `CREATE TABLE IF NOT EXISTS email_verifications (token text PRIMARY KEY NOT NULL, user_id text NOT NULL, email text NOT NULL, expires integer NOT NULL, created text NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS mfa_challenges (token text PRIMARY KEY NOT NULL, user_id text NOT NULL, expires integer NOT NULL, attempts integer DEFAULT 0 NOT NULL, return_to text DEFAULT '' NOT NULL)`,
+  `CREATE INDEX IF NOT EXISTS idx_activity_user ON activity_log(user_id, created)`,
+  `CREATE INDEX IF NOT EXISTS idx_submissions_assignment ON submissions(assignment_id, user_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_submissions_user ON submissions(user_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_messages_user ON messages(user_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_lesson_notes_user ON lesson_notes(user_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_quiz_attempts_user ON quiz_attempts(user_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_progress_lesson ON progress(lesson_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_posts_created ON posts(created)`,
+  `CREATE INDEX IF NOT EXISTS idx_rsvps_user ON event_rsvps(user_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_notifications_created ON notifications(created)`,
+  `CREATE INDEX IF NOT EXISTS idx_lessons_course ON lessons(course_id, position)`,
 ];
 const ADD_COLUMNS: [string, string, string][] = [
   ['courses', 'level', `text DEFAULT '입문' NOT NULL`],
@@ -118,6 +155,20 @@ const ADD_COLUMNS: [string, string, string][] = [
   ['events', 'replay', `text DEFAULT '' NOT NULL`],
   ['messages', 'edited', `text DEFAULT '' NOT NULL`],
   ['messages', 'replied', `text DEFAULT '' NOT NULL`],
+  // v9
+  ['users', 'email_verified', `integer DEFAULT 0 NOT NULL`],
+  ['user_profiles', 'notify_prefs', `text DEFAULT '' NOT NULL`],
+  ['user_profiles', 'nudged', `text DEFAULT '' NOT NULL`],
+  ['user_profiles', 'totp_secret', `text DEFAULT '' NOT NULL`],
+  ['user_profiles', 'totp_enabled', `integer DEFAULT 0 NOT NULL`],
+  ['password_resets', 'kind', `text DEFAULT 'admin' NOT NULL`],
+  ['events', 'reminded', `integer DEFAULT 0 NOT NULL`],
+  ['assignments', 'due_reminded', `text DEFAULT '' NOT NULL`],
+  ['courses', 'sequential', `integer DEFAULT 0 NOT NULL`],
+  ['courses', 'require_assignments', `integer DEFAULT 0 NOT NULL`],
+  ['lessons', 'captions', `text DEFAULT '' NOT NULL`],
+  ['announcements', 'public', `integer DEFAULT 1 NOT NULL`],
+  ['progress', 'ever_completed', `integer DEFAULT 0 NOT NULL`],
 ];
 
 let migrated = false;
@@ -148,6 +199,22 @@ export async function migrate() {
   ]) {
     try { await db.prepare(sql).run(); } catch (e) { console.warn('brand rename skipped', e); }
   }
+  // v9: 데이터 보정 — 기존 완료 기록 표시, 수료증 중복 제거 후 (교육생, 과정) 유일 인덱스
+  for (const sql of [
+    `UPDATE progress SET ever_completed=1 WHERE ever_completed=0 AND (complete=1 OR completed_at!='')`,
+    `DELETE FROM certificates WHERE rowid NOT IN (SELECT MIN(rowid) FROM certificates GROUP BY user_id, course_id)`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS certificates_user_course ON certificates(user_id, course_id)`,
+    `UPDATE users SET email_verified=1 WHERE email_verified=0 AND id IN (SELECT user_id FROM oauth_accounts)`,
+    `INSERT OR IGNORE INTO settings (id,value) VALUES ('data_version','1')`,
+  ]) {
+    try { await db.prepare(sql).run(); } catch (e) { console.warn('v9 fix skipped', e); }
+  }
+  // v9: 체험 계정 기본값이 꺼짐으로 바뀌었다. 실제 최고 관리자가 아직 없는 사이트는 잠기지 않도록 기존 동작(켜짐)을 명시적으로 저장한다.
+  try {
+    const stored = await first(`SELECT id FROM settings WHERE id='demo_mode'`);
+    const realAdmin = await first(`SELECT id FROM users WHERE role='admin' AND status='active' AND id NOT LIKE 'demo-%'`);
+    if (!stored && !realAdmin) await run(`INSERT INTO settings (id,value) VALUES ('demo_mode','1')`);
+  } catch (e) { console.warn('demo default skipped', e); }
   await run(`INSERT INTO settings (id,value) VALUES ('schema_version',?) ON CONFLICT(id) DO UPDATE SET value=excluded.value`, SCHEMA_VERSION);
   // wrangler `d1 migrations apply` 가 같은 변경을 다시 적용하지 않도록 기록 (테이블이 없으면 무시)
   try {

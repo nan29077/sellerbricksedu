@@ -196,7 +196,7 @@ export function AdminSettings() {
   return (
     <>
       <PageHead title="서비스 연동 설정" sub="수료 기준, 가입 정책, 소셜 로그인, AI와 메일 발송을 설정하세요." />
-      <form className="settings-grid" onSubmit={(e) => { e.preventDefault(); const f = Object.fromEntries(new FormData(e.currentTarget)); for (const k of ['auto_approve', 'oauth_auto_approve', 'demo_mode', 'banner_on']) f[k] = f[k] ? '1' : '0'; perform('settings', f, '설정을 저장했습니다.'); }}>
+      <form className="settings-grid" onSubmit={(e) => { e.preventDefault(); const f = Object.fromEntries(new FormData(e.currentTarget)); for (const k of ['auto_approve', 'oauth_auto_approve', 'demo_mode', 'banner_on', 'auto_reminders', 'mail_notify']) f[k] = f[k] ? '1' : '0'; perform('settings', f, '설정을 저장했습니다.'); }}>
         <div className="panel">
           <h3><Settings2 size={22} /> 학습·수료 기준</h3>
           <div className="form-two">
@@ -204,7 +204,9 @@ export function AdminSettings() {
             <label>퀴즈 응시 가능 시청 비율(%)<input name="watch_ratio" type="number" min={10} max={100} defaultValue={s.watch_ratio || 90} /></label>
           </div>
           <label>수료증 서명 문구<input name="cert_signer" defaultValue={s.cert_signer || ''} placeholder="셀러브릭스 캠퍼스 운영팀" /></label>
-          <label>영상 업로드 용량 한도(MB)<input name="max_video_mb" type="number" min={5} max={200} defaultValue={s.max_video_mb || 50} /></label>
+          <label>확인 문제 정답 공개<select name="quiz_reveal" defaultValue={s.quiz_reveal || 'pass'}><option value="pass">통과한 뒤에만 공개 (권장)</option><option value="always">제출 직후 항상 공개</option></select></label>
+          <label>영상 업로드 용량 한도(MB, 최대 95)<input name="max_video_mb" type="number" min={5} max={95} defaultValue={Math.min(95, Number(s.max_video_mb) || 50)} /></label>
+          <p className="small-muted">Cloudflare 요청 한도(100MB) 때문에 직접 업로드는 95MB까지입니다. 긴 강의는 YouTube·Vimeo·Cloudflare Stream 주소를 쓰세요.</p>
           <p className="small-muted">변경한 기준은 이후 학습부터 적용되며 이미 완료된 강의는 유지됩니다.</p>
         </div>
         <div className="panel">
@@ -212,7 +214,8 @@ export function AdminSettings() {
           <label className="check-label"><input type="checkbox" name="auto_approve" defaultChecked={s.auto_approve === '1'} /><span>이메일 가입 즉시 승인 (끄면 관리자 승인 후 학습 가능)</span></label>
           <label className="check-label"><input type="checkbox" name="oauth_auto_approve" defaultChecked={s.oauth_auto_approve === '1'} /><span>카카오·네이버 가입 즉시 승인</span></label>
           <label className="check-label"><input type="checkbox" name="demo_mode" defaultChecked={s.demo_mode !== '0'} /><span>체험 계정 허용 (교육생·최고 관리자 체험 버튼)</span></label>
-          {s.demo_mode !== '0' && <div className="info-note warn">체험 계정이 켜져 있으면 <b>누구나 최고 관리자 화면에 들어올 수 있습니다.</b> 운영 사이트에서는 꺼 두세요.</div>}
+          {s.demo_mode !== '0' && <div className="info-note warn">체험 계정이 켜져 있으면 <b>누구나 관리자 화면을 둘러볼 수 있습니다</b>(저장·삭제는 불가, 회원 이메일은 가림). 운영 사이트에서는 꺼 두세요.</div>}
+          {s.env_managed && <div className="info-note"><KeyRound size={15} /> 서버 환경 변수로 관리 중인 항목: <code>{s.env_managed}</code> — 이 화면에서 바꿔도 적용되지 않습니다.</div>}
           <h4>카카오 로그인 {data.oauth.kakao ? <Pill tone="good">연결됨</Pill> : <Pill>미연결</Pill>}</h4>
           <label>REST API 키<input name="kakao_client" defaultValue={s.kakao_client || ''} placeholder="카카오 개발자 콘솔 › 앱 키 › REST API 키" /></label>
           <label>Client Secret<input name="kakao_secret" type="password" autoComplete="off" placeholder={s.has_kakao_secret === '1' ? '저장됨 · 변경 시에만 입력' : '카카오 로그인 › 보안 › Client Secret'} /></label>
@@ -233,11 +236,13 @@ export function AdminSettings() {
           <label>영상 제작 서비스 메모<input name="video_provider" defaultValue={s.video_provider || ''} placeholder="추후 연결할 영상 제작 서비스" /></label>
         </div>
         <div className="panel">
-          <h3><Mail size={22} /> 메일 발송 (비밀번호 재설정)</h3>
-          <p className="muted">Resend API 키와 발신 주소를 등록하면 비밀번호 재설정 메일이 자동 발송됩니다. 없으면 관리자가 교육생 관리에서 링크를 전달합니다.</p>
+          <h3><Mail size={22} /> 메일 발송</h3>
+          <p className="muted">Resend API 키와 발신 주소를 등록하면 비밀번호 재설정·가입 이메일 인증·초대 메일과 주요 알림 메일이 자동 발송됩니다. 없으면 관리자가 링크를 직접 전달합니다.</p>
           <label>Resend API 키<input name="resend_key" type="password" autoComplete="off" placeholder={s.has_resend_key === '1' ? '저장됨 · 변경 시에만 입력' : 're_…'} /></label>
           {s.has_resend_key === '1' && <label className="check-label"><input type="checkbox" name="clear_resend_key" /><span>저장된 Resend 키 삭제</span></label>}
           <label>발신 주소<input name="mail_from" defaultValue={s.mail_from || ''} placeholder="셀러브릭스 캠퍼스 <campus@yourdomain.com>" /></label>
+          <label className="check-label"><input type="checkbox" name="mail_notify" defaultChecked={s.mail_notify !== '0'} /><span>주요 알림(답변·과제·공지·일정·수료)을 메일로도 보내기 — 교육생이 알림 화면에서 종류별로 끌 수 있어요</span></label>
+          <label>사이트 주소 (메일 속 링크)<input name="site_origin" defaultValue={s.site_origin || ''} placeholder={origin} /></label>
           <div className="info-note"><KeyRound size={15} /> 수료증 공개 확인 주소: <code>{origin}/verify</code></div>
         </div>
         <div className="panel">
@@ -262,6 +267,16 @@ export function AdminSettings() {
           <label>이용약관 전문 (선택)<textarea name="terms_text" rows={5} defaultValue={s.terms_text || ''} placeholder="비워 두면 기본 이용약관을 사용합니다." /></label>
           <label>개인정보처리방침 전문 (선택)<textarea name="privacy_text" rows={5} defaultValue={s.privacy_text || ''} placeholder="비워 두면 기본 개인정보처리방침을 사용합니다." /></label>
           <div className="info-note"><a className="text-link" href="/terms" target="_blank" rel="noopener">이용약관 보기</a> · <a className="text-link" href="/privacy" target="_blank" rel="noopener">개인정보처리방침 보기</a> — 기본 문안은 참고용 템플릿입니다. 실제 운영 전에 법률 검토를 받으세요.</div>
+        </div>
+        <div className="panel">
+          <h3><BellRing size={22} /> 자동 알림·정리</h3>
+          <p className="muted">별도 서버 없이, 사이트에 접속이 있을 때 10분에 한 번 실행됩니다.</p>
+          <label className="check-label"><input type="checkbox" name="auto_reminders" defaultChecked={s.auto_reminders !== '0'} /><span>자동 알림 — 라이브 세션 시작 1시간 전(참석자), 과제 마감 전날(미제출자), 7일 이상 학습이 없는 교육생 독려(2주에 1회)</span></label>
+          <p className="small-muted">항상 실행: 만료된 로그인·링크 정리, 읽은 지 90일 지난 알림·1년 지난 활동 로그 정리, 빠진 수료증 보정.</p>
+          <div className="admin-actions">
+            <Button small secondary disabled={busy} onClick={async () => { const r = await perform('maintenance_run', {}, ''); if (r) setToast(`실행했어요 · 일정 알림 ${r.report.event || 0}명 · 마감 알림 ${r.report.assignment || 0}명 · 독려 ${r.report.nudge || 0}명 · 수료증 ${r.report.certificate || 0}건`); }}>지금 실행</Button>
+            <Button small secondary disabled={busy} onClick={async () => { const r = await perform('certificate_reconcile', {}, ''); if (r) setToast(`수료 조건을 채운 교육생에게 수료증 ${r.count}건을 발급했어요.`); }}>수료증 일괄 점검</Button>
+          </div>
         </div>
         <button className="button" disabled={busy} type="submit">설정 저장</button>
       </form>

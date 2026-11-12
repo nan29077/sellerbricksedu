@@ -1,6 +1,10 @@
-import { all, first, kstDay } from './db';
-import type { SessionUser } from './auth';
-import { getSettings, publicSettings, adminSettingsView } from './settings';
+import { all, first, kstDay, dataVersion } from './db';
+import { isDemo, type SessionUser } from './auth';
+import { getSettings, publicSettings, adminSettingsView, mailReady } from './settings';
+import { EMAIL_TYPES } from './notify';
+
+/** 체험 관리자에게는 실제 회원의 이메일을 가린다 */
+const mask = (email: string) => { const [a, d] = String(email || '').split('@'); return d ? `${a.slice(0, 1)}***@${d}` : '***'; };
 
 const parseJson = (s: string, fallback: any) => {
   try {
@@ -13,8 +17,10 @@ const parseJson = (s: string, fallback: any) => {
 /** 클라이언트가 한 번에 받는 전체 상태. 역할별로 노출 범위를 다르게 한다. */
 export async function buildPayload(user: SessionUser | null) {
   const admin = user?.role === 'admin' || user?.role === 'manager';
-  const superAdmin = user?.role === 'admin';
+  const demo = isDemo(user);
+  const superAdmin = user?.role === 'admin' && !demo;
   const settingsMap = await getSettings();
+  const stamp = await dataVersion();
   const settings = publicSettings(settingsMap);
   const oauth = {
     kakao: !!(settingsMap.kakao_client && settingsMap.kakao_secret),
@@ -30,7 +36,7 @@ export async function buildPayload(user: SessionUser | null) {
   const lessons = rawLessons.map((l: any) => {
     const base = { ...l, questions: parseJson(l.questions, []).map(({ answer: _a, explanation: _e, ...q }: any) => q), chapters: parseJson(l.chapters || '[]', []) };
     // 비로그인: 미리보기 강의가 아니면 본문(영상·대본·자료)은 내려보내지 않는다
-    if (!user && !l.preview) return { ...base, video: l.video ? 'locked' : '', transcript: '', resource: '', chapters: [] };
+    if (!user && !l.preview) return { ...base, video: l.video ? 'locked' : '', transcript: '', resource: '', chapters: [], captions: '' };
     return base;
   });
   const ratings = await all<{ course_id: string; avg: number; count: number }>('SELECT course_id, AVG(rating) AS avg, COUNT(*) AS count FROM reviews GROUP BY course_id');
@@ -57,13 +63,13 @@ export async function buildPayload(user: SessionUser | null) {
              WHERE announcements.cohort_id IS NULL OR announcements.cohort_id IN (SELECT cohort_id FROM memberships WHERE user_id=?) ORDER BY pinned DESC, created DESC LIMIT 100`,
         ...(admin ? [user.id] : [user.id, user.id]),
       )
-    : await all('SELECT *, NULL AS cohort_name FROM announcements WHERE cohort_id IS NULL ORDER BY pinned DESC, created DESC LIMIT 20');
+    : await all('SELECT *, NULL AS cohort_name FROM announcements WHERE cohort_id IS NULL AND public=1 ORDER BY pinned DESC, created DESC LIMIT 20');
   const cohorts = await all('SELECT * FROM cohorts ORDER BY starts DESC, name');
 
   const faqs = await all('SELECT * FROM faqs WHERE published=1 ORDER BY position');
   const paths = (await all(admin ? 'SELECT * FROM paths ORDER BY position' : 'SELECT * FROM paths WHERE published=1 ORDER BY position')).map((p: any) => ({ ...p, courses: parseJson(p.courses, []) }));
   const lessonFiles = user ? await all(admin ? 'SELECT id,lesson_id,name,size,type,created FROM lesson_files ORDER BY created' : 'SELECT lesson_files.id,lesson_files.lesson_id,lesson_files.name,lesson_files.size,lesson_files.type,lesson_files.created FROM lesson_files JOIN lessons ON lessons.id=lesson_files.lesson_id JOIN courses ON courses.id=lessons.course_id WHERE courses.published=1 ORDER BY lesson_files.created') : [];
-  const base: any = { user, settings, oauth, courses: coursesOut, lessons, reviews, announcements, cohorts, faqs, paths, lessonFiles };
+  const base: any = { stamp, user, settings, oauth, courses: coursesOut, lessons, reviews, announcements, cohorts, faqs, paths, lessonFiles };
   if (!user) return { ...base, progress: [], messages: [], memberships: [], channels: [], visits: [], notifications: [], notes: [], learningDays: [], certificates: [], assignments: [], submissions: [], events: [], posts: [] };
 
   const [progress, notes, learningDays, certificates, memberships, channels, visits, notifications, assignments, submissions] = await Promise.all([
@@ -79,7 +85,7 @@ export async function buildPayload(user: SessionUser | null) {
       user.id,
     ),
     all('SELECT * FROM channel_visits WHERE user_id=?', user.id),
-    all('SELECT * FROM notifications WHERE user_id=? ORDER BY created DESC LIMIT 60', user.id),
+    all('SELECT * FROM notifications WHERE user_id=? ORDER BY created DESC LIMIT 100', user.id),
     all(admin ? 'SELECT * FROM assignments ORDER BY position' : 'SELECT assignments.* FROM assignments JOIN courses ON courses.id=assignments.course_id WHERE assignments.published=1 AND courses.published=1 ORDER BY assignments.position'),
     admin
       ? all('SELECT submissions.*, users.name, users.email FROM submissions JOIN users ON users.id=submissions.user_id ORDER BY submissions.created DESC')
@@ -102,13 +108,15 @@ export async function buildPayload(user: SessionUser | null) {
   );
 
   const myCohort = admin ? null : (await first<{ cohort_id: string }>('SELECT cohort_id FROM memberships WHERE user_id=?', user.id))?.cohort_id || null;
-  const events = await all(
+  const eventsRaw = await all<any>(
     `SELECT events.*, cohorts.name AS cohort_name, (SELECT COUNT(*) FROM event_rsvps WHERE event_id=events.id) AS going,
             EXISTS(SELECT 1 FROM event_rsvps WHERE event_id=events.id AND user_id=?) AS mine
      FROM events LEFT JOIN cohorts ON cohorts.id=events.cohort_id
      ${admin ? '' : 'WHERE events.cohort_id IS NULL OR events.cohort_id=?'} ORDER BY events.starts DESC LIMIT 100`,
     user.id, ...(admin ? [] : [myCohort || '']),
   );
+  // 세션 입장 링크는 참석 신청자와 운영진에게만
+  const events = admin ? eventsRaw : eventsRaw.map((e) => (e.mine ? e : { ...e, link: e.link ? 'rsvp' : '' }));
   const posts = await all(
     `SELECT posts.id, posts.user_id, posts.category, posts.title, substr(posts.body,1,200) AS excerpt, posts.pinned, posts.locked, posts.created, posts.updated,
             users.name, users.role AS author_role, COALESCE(user_profiles.avatar,0) AS avatar, memberships.cohort_id,
@@ -120,19 +128,23 @@ export async function buildPayload(user: SessionUser | null) {
     user.id,
   );
   const quizAttempts = await all('SELECT lesson_id, score, passed, created FROM quiz_attempts WHERE user_id=? ORDER BY created DESC LIMIT 200', user.id);
-  const result: any = { ...base, progress, notes, learningDays, certificates, memberships, channels, visits, notifications, assignments, submissions, messages, events, posts, quizAttempts };
+  const result: any = { ...base, progress, notes, learningDays, certificates, memberships, channels, visits, notifications, assignments, submissions, messages, events, posts, quizAttempts, emailTypes: EMAIL_TYPES, mailReady: mailReady(settingsMap) };
 
   if (admin) {
     const [users, allProgress, questions, activity, daily, resets, oauthAccounts, allCertificates] = await Promise.all([
       all(
+        // 마지막 활동 = 활동 로그·시청 진도 중 최신 (시청만 하는 교육생도 '활동 중'으로 판정)
         `SELECT users.id,users.name,users.email,users.role,users.status,users.created, COALESCE(user_profiles.avatar,0) AS avatar, COALESCE(user_profiles.memo,'') AS memo, memberships.cohort_id,
-         CASE WHEN users.password IS NULL THEN 0 ELSE 1 END AS has_password,
-         (SELECT MAX(created) FROM activity_log WHERE user_id=users.id) AS last_active,
-         (SELECT COUNT(*) FROM progress WHERE user_id=users.id AND complete=1) AS completed,
-         (SELECT COALESCE(SUM(watched),0) FROM progress WHERE user_id=users.id) AS watched
-         FROM users LEFT JOIN user_profiles ON user_profiles.user_id=users.id LEFT JOIN memberships ON memberships.user_id=users.id ORDER BY users.created DESC`,
+         CASE WHEN users.password IS NULL THEN 0 ELSE 1 END AS has_password, COALESCE(users.email_verified,0) AS email_verified, COALESCE(user_profiles.totp_enabled,0) AS mfa,
+         NULLIF(MAX(COALESCE(al.last,''), COALESCE(pg.last,'')),'') AS last_active,
+         COALESCE(pg.completed,0) AS completed, COALESCE(pg.watched,0) AS watched
+         FROM users LEFT JOIN user_profiles ON user_profiles.user_id=users.id LEFT JOIN memberships ON memberships.user_id=users.id
+         LEFT JOIN (SELECT user_id, MAX(created) AS last FROM activity_log GROUP BY user_id) al ON al.user_id=users.id
+         LEFT JOIN (SELECT user_id, MAX(updated) AS last, SUM(complete) AS completed, SUM(watched) AS watched FROM progress GROUP BY user_id) pg ON pg.user_id=users.id
+         ORDER BY users.created DESC`,
       ),
-      all('SELECT * FROM progress'),
+      // 교육생 개인 노트(note)는 관리자에게 보내지 않는다
+      all('SELECT user_id,lesson_id,position,watched,complete,score,bookmark,updated,attempts,best_score,completed_at FROM progress'),
       all('SELECT id,questions FROM lessons'),
       all('SELECT activity_log.*, users.name FROM activity_log JOIN users ON users.id=activity_log.user_id ORDER BY activity_log.created DESC LIMIT 400'),
       all(`SELECT day, COUNT(DISTINCT user_id) AS learners, SUM(seconds) AS seconds, SUM(completed) AS completed FROM learning_days WHERE day>=? GROUP BY day ORDER BY day`, kstDay(new Date(Date.now() - 29 * 86400000))),
@@ -140,7 +152,8 @@ export async function buildPayload(user: SessionUser | null) {
       all('SELECT provider, user_id FROM oauth_accounts'),
       all('SELECT certificates.*, users.name, COALESCE(courses.title, certificates.course_title) AS course_title FROM certificates JOIN users ON users.id=certificates.user_id LEFT JOIN courses ON courses.id=certificates.course_id ORDER BY issued DESC LIMIT 200'),
     ]);
-    const hasAiKey = !!(await first(`SELECT id FROM settings WHERE id='ai_key'`));
+    const hasAiKey = !!settingsMap.ai_key;
+    const needsAdmin = !(await first("SELECT 1 FROM users WHERE role='admin' AND status='active' AND id NOT LIKE 'demo-%'"));
     // 퀴즈 분석: 강의별 응시·통과율 + 문항별 정답률 (최근 3000건)
     const attempts = await all<any>('SELECT lesson_id, answers, score, passed FROM quiz_attempts ORDER BY created DESC LIMIT 3000');
     const quizStats: Record<string, { attempts: number; passed: number; avg: number; perQuestion: { correct: number; total: number }[] }> = {};
@@ -156,7 +169,15 @@ export async function buildPayload(user: SessionUser | null) {
     const rsvps = await all('SELECT event_rsvps.event_id, event_rsvps.user_id, users.name, users.email FROM event_rsvps JOIN users ON users.id=event_rsvps.user_id');
     // 수료 후 강의가 추가된 과정: 교육생에게 '추가 강의' 안내용
 
+    if (demo) {
+      for (const u of users as any[]) if (!String(u.id).startsWith('demo-')) { u.email = mask(u.email); u.memo = ''; }
+      for (const s of result.submissions as any[]) if (s.email) s.email = mask(s.email);
+      for (const m of result.messages as any[]) if (m.email) m.email = mask(m.email);
+      for (const r of rsvps as any[]) r.email = mask(r.email);
+    }
     Object.assign(result, {
+      demo,
+      needsAdmin,
       users,
       allProgress,
       questions: questions.map((l: any) => ({ ...l, questions: parseJson(l.questions, []) })),

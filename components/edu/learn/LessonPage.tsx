@@ -1,5 +1,5 @@
 'use client';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, Bookmark, Download, Lock, Trophy, PenLine, MessageCircle, CheckCircle2, GraduationCap, Target, Clock, ThumbsUp, Plus, Trash2, FileText, RefreshCw, Eye, EyeOff, Lightbulb } from 'lucide-react';
 import { useEdu } from '../../../lib/edu-store';
 import { fmt, relTime, downloadText } from '../../../lib/learning';
@@ -25,6 +25,25 @@ export function LessonPage({ lesson }: { lesson: Lesson }) {
   const [qPublic, setQPublic] = useState(true);
   const [tab, setTab] = useState<'notes' | 'qa' | 'resource' | 'transcript'>('notes');
   const player = useRef<PlayerApi | null>(null);
+  // 보기 순서 섞기 (화면 표시만 바꾸고 제출은 원래 번호로)
+  const [orders] = useState(() => lesson.questions.map((q) => { const o = q.options.map((_, i) => i); for (let i = o.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [o[i], o[j]] = [o[j], o[i]]; } return o; }));
+  // 강의 노트 자동 저장 (입력을 멈추고 1.5초 뒤)
+  const [noteState, setNoteState] = useState<'saved' | 'dirty' | 'saving'>('saved');
+  const savedNote = useRef(lp.note || '');
+  useEffect(() => {
+    if (!user || note === savedNote.current) return;
+    setNoteState('dirty');
+    const t = setTimeout(async () => { setNoteState('saving'); const r = await act('note', { lessonId: lesson.id, note }, true); if (r) { savedNote.current = note; setNoteState('saved'); } else setNoteState('dirty'); }, 1500);
+    return () => clearTimeout(t);
+  }, [note, user, lesson.id, act]);
+  useEffect(() => {
+    if (noteState === 'saved') return;
+    const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [noteState]);
+  // 순차 학습 과정: 바로 앞 강의를 끝내야 이 강의를 학습할 수 있다 (운영진·미리보기 제외)
+  const locked = !!user && user.role === 'student' && !!course?.sequential && !!prev && !pfor(prev.id).complete && !lp.complete;
 
   const watched = Math.max(localWatched, lp.watched || 0);
   const reading = !lesson.video;
@@ -56,15 +75,18 @@ export function LessonPage({ lesson }: { lesson: Lesson }) {
     <div className="lesson-layout">
       <div>
         <button className="back" onClick={() => go(user ? '/learn/courses' : '/course/' + lesson.course_id)}><ChevronLeft size={16} /> {user ? '나의 강의실' : '과정으로'}</button>
-        <Player
+        {locked ? (
+          <div className="player-box"><div className="video-empty"><Lock size={44} /><h2>이전 강의를 먼저 완료해 주세요</h2><p>이 과정은 순서대로 학습해요. &lsquo;{prev?.title}&rsquo;을(를) 마치면 열립니다.</p>{prev && <Button small onClick={() => go('/lesson/' + prev.id)}><ChevronLeft size={15} /> 이전 강의로</Button>}</div></div>
+        ) : <Player
           key={lesson.id}
           lesson={lesson}
           startAt={lp.position || 0}
+          trackable={!!user}
           nextLessonId={user ? next?.id : undefined}
           onWatched={user ? onWatched : () => {}}
           onReady={(api) => { player.current = api; }}
           onEnded={async () => { if (!user) return; await load(); setToast(canQuiz || watched >= lesson.duration * ratio ? '영상 시청을 마쳤어요. 확인 문제를 풀어보세요.' : '영상 시청을 마쳤어요.'); }}
-        />
+        />}
         <div className="player-caption">
           <span>{course?.title} · {index + 1} / {items.length}강{lesson.section ? ` · ${lesson.section}` : ''}</span>
           <span><Clock size={13} /> {fmt(lesson.duration)} · {watchedPct}% 시청{lp.complete ? ' · 완료' : ''}</span>
@@ -102,7 +124,7 @@ export function LessonPage({ lesson }: { lesson: Lesson }) {
                     <h3><PenLine size={18} /> 강의 노트</h3>
                     <textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="나의 방송에 적용하고 싶은 내용을 정리해 보세요." rows={4} />
                     <div className="between">
-                      <Button small onClick={() => perform('note', { lessonId: lesson.id, note }, '학습 노트를 저장했습니다.')} disabled={busy}>노트 저장</Button>
+                      <span className="note-status" role="status">{noteState === 'saving' ? '저장 중…' : noteState === 'dirty' ? '입력 중 · 잠시 후 자동 저장' : note ? '자동 저장됨' : ''}</span>
                       {(myNotes.length > 0 || note) && <button className="text-link" onClick={() => downloadText(`${lesson.title}-노트.md`, `# ${lesson.title}\n\n${note ? note + '\n\n' : ''}${myNotes.map((n) => `- [${fmt(n.at)}] ${n.body}`).join('\n')}`)}><Download size={14} /> 마크다운 내려받기</button>}
                     </div>
                   </div>
@@ -153,20 +175,21 @@ export function LessonPage({ lesson }: { lesson: Lesson }) {
                 </div>
               </div>
               {reading && !lp.complete && <div className="info-note"><Lightbulb size={17} /> 영상 등록 전에는 학습 소개와 자료를 읽고 확인 문제를 통과하면 강의가 완료돼요.</div>}
+              {locked && <div className="info-note"><Lock size={17} /> 이전 강의를 완료하면 확인 문제를 풀 수 있어요.</div>}
               {!canQuiz && <div className="info-note"><Lock size={17} /> 영상의 {Math.round(ratio * 100)}% 이상을 시청하면 확인 문제를 풀 수 있어요. <ProgressBar value={Math.min(100, Math.round((watchedPct / (ratio * 100)) * 100))} small /></div>}
-              <fieldset disabled={!canQuiz || busy}>
+              <fieldset disabled={!canQuiz || busy || locked}>
                 {lesson.questions.map((q, i) => {
                   const r = quizResult?.results[i];
                   return (
                     <div className={'quiz-item ' + (r ? (r.correct ? 'correct' : 'wrong') : '')} key={i}>
                       <h3><span>Q{i + 1}.</span> {q.question}</h3>
-                      {q.options.map((o, j) => (
+                      {(orders[i] || q.options.map((_, j) => j)).map((j) => (
                         <label key={j} className={'quiz-option ' + (quizAnswers[i] === j ? 'chosen' : '') + (r && r.answer === j ? ' answer' : '')}>
                           <input type="radio" name={`quiz-${i}`} checked={quizAnswers[i] === j} onChange={() => { setQuizAnswers({ ...quizAnswers, [i]: j }); if (quizResult) setQuizResult(null); }} />
-                          <span>{o}</span>
+                          <span>{q.options[j]}</span>
                         </label>
                       ))}
-                      {r && <div className={'quiz-feedback ' + (r.correct ? 'correct' : 'wrong')}><b>{r.correct ? '정답이에요.' : '다시 확인해 주세요.'}</b><p>{r.explanation}</p></div>}
+                      {r && <div className={'quiz-feedback ' + (r.correct ? 'correct' : 'wrong')}><b>{r.correct ? '정답이에요.' : quizResult.revealed ? '다시 확인해 주세요.' : '틀렸어요. 강의 내용을 다시 확인해 보세요.'}</b>{r.explanation && <p>{r.explanation}</p>}</div>}
                     </div>
                   );
                 })}
@@ -178,7 +201,7 @@ export function LessonPage({ lesson }: { lesson: Lesson }) {
               {quizResult && (
                 <div className={'quiz-total ' + (quizResult.passed ? 'pass' : '')} id="quiz-result">
                   <Trophy size={21} />
-                  <b>{quizResult.score}점 · {quizResult.passed ? '학습 완료! 잘하셨어요.' : `${pass}점 이상이면 통과합니다. 해설을 보고 다시 도전해 보세요.`}</b>
+                  <b>{quizResult.score}점 · {quizResult.passed ? '학습 완료! 잘하셨어요.' : quizResult.revealed ? `${pass}점 이상이면 통과합니다. 해설을 보고 다시 도전해 보세요.` : `${pass}점 이상이면 통과합니다. 통과하면 정답과 해설을 볼 수 있어요.`}</b>
                   {quizResult.passed && next && <Button small secondary onClick={() => go('/lesson/' + next.id)}>다음 강의 <ChevronRight size={15} /></Button>}
                 </div>
               )}
@@ -198,12 +221,13 @@ export function LessonPage({ lesson }: { lesson: Lesson }) {
           {user && <ProgressBar value={pct(course?.id)} label="과정 진도" />}
           {items.map((l, i) => {
             const p = pfor(l.id);
+            const seqLocked = !!user && user.role === 'student' && !!course?.sequential && i > 0 && !p.complete && !pfor(items[i - 1].id).complete;
             const showSection = l.section && (i === 0 || items[i - 1].section !== l.section);
             return (
               <div key={l.id}>
                 {showSection && <span className="side-section">{l.section}</span>}
                 <button className={'side-lesson ' + (l.id === lesson.id ? 'selected' : '') + (p.complete ? ' done' : '')} onClick={() => go('/lesson/' + l.id)} disabled={!user && !l.preview}>
-                  <span>{p.complete ? <CheckCircle2 size={17} /> : !user && !l.preview ? <Lock size={14} /> : String(i + 1).padStart(2, '0')}</span>
+                  <span>{p.complete ? <CheckCircle2 size={17} /> : (!user && !l.preview) || seqLocked ? <Lock size={14} /> : String(i + 1).padStart(2, '0')}</span>
                   <div><b>{l.title}</b><small>{fmt(l.duration)} {l.video ? '' : '· 등록 예정'}{p.watched && !p.complete ? ` · ${Math.min(100, Math.round((p.watched / l.duration) * 100))}%` : ''}</small></div>
                 </button>
               </div>

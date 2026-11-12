@@ -8,44 +8,64 @@ import { SiteBanner } from './SiteBanner';
 import { ROLES } from '../../../lib/constants';
 
 type MenuItem = [string, string, LucideIcon, string?];
-const MENU_STUDENT: MenuItem[] = [
-  ['/learn', '학습 대시보드', LayoutDashboard],
-  ['/learn/courses', '나의 강의실', BookOpen],
-  ['/learn/paths', '학습 경로', Route],
-  ['/learn/events', '라이브 세션·일정', CalendarDays, 'events'],
-  ['/learn/assignments', '과제', ClipboardList, 'revise'],
-  ['/learn/bookmarks', '책갈피', Bookmark, 'bookmarks'],
-  ['/learn/notes', '학습 노트', PenLine],
-  ['/learn/achievements', '학습 기록·배지', Award],
-  ['/learn/certificates', '수료증', Trophy],
-  ['/learn/questions', '학습 Q&A', MessageCircle],
-  ['/learn/notices', '공지사항', Megaphone, 'notices'],
-  ['/learn/lounge', '셀러 라운지', MessagesSquare],
-  ['/learn/community', '셀러 채널 교류', Users],
+type MenuGroup = [string, MenuItem[]];
+const MENU_STUDENT: MenuGroup[] = [
+  ['학습', [
+    ['/learn', '학습 대시보드', LayoutDashboard],
+    ['/learn/courses', '나의 강의실', BookOpen],
+    ['/learn/paths', '학습 경로', Route],
+    ['/learn/events', '라이브 세션·일정', CalendarDays, 'events'],
+    ['/learn/assignments', '과제', ClipboardList, 'revise'],
+  ]],
+  ['나의 기록', [
+    ['/learn/bookmarks', '책갈피', Bookmark, 'bookmarks'],
+    ['/learn/notes', '학습 노트', PenLine],
+    ['/learn/achievements', '학습 기록·배지', Award],
+    ['/learn/certificates', '수료증', Trophy],
+  ]],
+  ['소통', [
+    ['/learn/questions', '학습 Q&A', MessageCircle],
+    ['/learn/notices', '공지사항', Megaphone, 'notices'],
+    ['/learn/notifications', '알림', Bell, 'unread'],
+    ['/learn/lounge', '셀러 라운지', MessagesSquare],
+    ['/learn/community', '셀러 채널 교류', Users],
+  ]],
 ];
-const MENU_ADMIN: MenuItem[] = [
-  ['/admin', '운영 대시보드', LayoutDashboard],
-  ['/admin/courses', '교육 과정 관리', Layers],
-  ['/admin/videos', '영상·퀴즈 관리', Video],
-  ['/admin/paths', '학습 경로', Route],
-  ['/admin/quiz', '퀴즈 분석', BarChart3],
-  ['/admin/assignments', '과제 관리', ClipboardList, 'submissions'],
-  ['/admin/events', '라이브 세션·일정', CalendarDays],
-  ['/admin/members', '교육생 관리', Users, 'pending'],
-  ['/admin/cohorts', '기수 관리', GraduationCap],
-  ['/admin/progress', '학습 현황', BarChart3],
-  ['/admin/questions', '질문 관리', MessageCircle, 'questions'],
-  ['/admin/announcements', '공지 관리', Megaphone],
-  ['/admin/faqs', 'FAQ 관리', HelpCircle],
-  ['/admin/lounge', '셀러 라운지', MessagesSquare],
-  ['/admin/activity', '활동 로그', Activity],
-  ['/admin/community', '셀러 채널 교류', Users],
-  ['/admin/ai', 'AI 제작 스튜디오', Sparkles],
-  ['/admin/settings', '연동 설정', Settings],
+const MENU_ADMIN: MenuGroup[] = [
+  ['운영', [
+    ['/admin', '운영 대시보드', LayoutDashboard],
+    ['/admin/progress', '학습 현황', BarChart3],
+    ['/admin/activity', '활동 로그', Activity],
+  ]],
+  ['교육 콘텐츠', [
+    ['/admin/courses', '교육 과정 관리', Layers],
+    ['/admin/videos', '영상·퀴즈 관리', Video],
+    ['/admin/paths', '학습 경로', Route],
+    ['/admin/quiz', '퀴즈 분석', BarChart3],
+    ['/admin/assignments', '과제 관리', ClipboardList, 'submissions'],
+    ['/admin/events', '라이브 세션·일정', CalendarDays],
+    ['/admin/faqs', 'FAQ 관리', HelpCircle],
+    ['/admin/ai', 'AI 제작 스튜디오', Sparkles],
+  ]],
+  ['교육생·소통', [
+    ['/admin/members', '교육생 관리', Users, 'pending'],
+    ['/admin/cohorts', '기수 관리', GraduationCap],
+    ['/admin/questions', '질문 관리', MessageCircle, 'questions'],
+    ['/admin/announcements', '공지 관리', Megaphone],
+    ['/admin/notifications', '알림', Bell, 'unread'],
+    ['/admin/lounge', '셀러 라운지', MessagesSquare],
+    ['/admin/community', '셀러 채널 교류', Users],
+  ]],
+  ['설정', [
+    ['/admin/settings', '연동 설정', Settings],
+  ]],
 ];
+/** 모바일 하단 바 */
+const BOTTOM_STUDENT: MenuItem[] = [['/learn', '홈', LayoutDashboard], ['/learn/courses', '강의실', BookOpen], ['/learn/events', '일정', CalendarDays, 'events'], ['/learn/notifications', '알림', Bell, 'unread']];
+const BOTTOM_ADMIN: MenuItem[] = [['/admin', '대시보드', LayoutDashboard], ['/admin/members', '교육생', Users, 'pending'], ['/admin/questions', '질문', MessageCircle, 'questions'], ['/admin/notifications', '알림', Bell, 'unread']];
 
 function NotificationBell() {
-  const { data, unread, act, go } = useEdu();
+  const { data, unread, act, go, admin } = useEdu();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -67,6 +87,7 @@ function NotificationBell() {
             <b>알림</b>
             {unread > 0 && <button onClick={() => act('notif_read', { all: true })}>모두 읽음</button>}
             {list.some((n) => n.read) && <button onClick={() => act('notif_clear')}>읽은 알림 지우기</button>}
+            <button onClick={() => { setOpen(false); go(admin ? '/admin/notifications' : '/learn/notifications'); }}>전체 보기·설정</button>
             <button onClick={() => setOpen(false)} aria-label="닫기"><X size={16} /></button>
           </div>
           {list.length ? (
@@ -112,29 +133,41 @@ export function PortalLayout({ children }: { children: ReactNode }) {
     submissions: (data.submissions ?? []).filter((s) => s.status === 'submitted').length,
     pending: (data.users ?? []).filter((u) => u.status === 'pending').length,
     questions: data.messages.filter((m) => !m.reply).length,
+    unread: (data.notifications ?? []).filter((n) => !n.read).length,
   };
-  const menus = admin ? MENU_ADMIN.filter(([p]) => superAdmin || p !== '/admin/settings') : MENU_STUDENT;
-  const q = search.trim();
+  const groups: MenuGroup[] = admin ? MENU_ADMIN.map(([g, items]) => [g, items.filter(([p]) => superAdmin || p !== '/admin/settings')] as MenuGroup).filter(([, items]) => items.length) : MENU_STUDENT;
+  const isSel = (p: string) => path === p || (p !== '/learn' && p !== '/admin' && path.startsWith(p + '/')) || (p !== '/learn' && p !== '/admin' && path === p);
+  const q = search.trim().toLowerCase();
+  const has = (s: string | undefined) => (s || '').toLowerCase().includes(q);
+  /** 검색에서 과정을 고르면 포털 안에서 이어서 학습할 강의로 */
+  const nextLessonPath = (cid: string) => {
+    const next = data.lessons.filter((l) => l.course_id === cid).sort((a, b) => a.position - b.position).find((l) => !progress.some((p) => p.lesson_id === l.id && p.complete));
+    return next ? '/lesson/' + next.id : '/course/' + cid;
+  };
   const results: { key: string; title: string; sub: string; to: string }[] = q.length > 1 ? [
-    ...data.courses.filter((c) => c.title.includes(q)).slice(0, 3).map((c) => ({ key: 'c' + c.id, title: c.title, sub: '과정 · ' + c.category, to: '/course/' + c.id })),
-    ...data.lessons.filter((l) => l.title.includes(q) || l.summary.includes(q)).slice(0, 5).map((l) => ({ key: 'l' + l.id, title: l.title, sub: '강의 · ' + (data.courses.find((c) => c.id === l.course_id)?.title || ''), to: '/lesson/' + l.id })),
-    ...(data.posts ?? []).filter((p) => p.title.includes(q)).slice(0, 3).map((p) => ({ key: 'p' + p.id, title: p.title, sub: '라운지 · ' + p.name, to: '/learn/lounge/' + p.id })),
-    ...data.events.filter((e) => e.title.includes(q)).slice(0, 2).map((e) => ({ key: 'e' + e.id, title: e.title, sub: '일정 · ' + e.starts.slice(0, 10), to: admin ? '/admin/events' : '/learn/events' })),
-    ...data.assignments.filter((a) => a.title.includes(q)).slice(0, 2).map((a) => ({ key: 's' + a.id, title: a.title, sub: '과제', to: admin ? '/admin/assignments' : '/learn/assignments' })),
-    ...(data.faqs ?? []).filter((f) => f.question.includes(q)).slice(0, 2).map((f) => ({ key: 'f' + f.id, title: f.question, sub: 'FAQ', to: '/faq' })),
-    ...data.announcements.filter((a) => a.title.includes(q)).slice(0, 2).map((a) => ({ key: 'a' + a.id, title: a.title, sub: '공지', to: admin ? '/admin/announcements' : '/learn/notices' })),
+    ...data.courses.filter((c) => has(c.title) || has(c.description)).slice(0, 3).map((c) => ({ key: 'c' + c.id, title: c.title, sub: '과정 · ' + c.category, to: admin ? '/admin/videos' : nextLessonPath(c.id) })),
+    ...data.lessons.filter((l) => has(l.title) || has(l.summary)).slice(0, 5).map((l) => ({ key: 'l' + l.id, title: l.title, sub: '강의 · ' + (data.courses.find((c) => c.id === l.course_id)?.title || ''), to: '/lesson/' + l.id })),
+    ...(data.posts ?? []).filter((p) => has(p.title)).slice(0, 3).map((p) => ({ key: 'p' + p.id, title: p.title, sub: '라운지 · ' + p.name, to: '/learn/lounge/' + p.id })),
+    ...data.events.filter((e) => has(e.title)).slice(0, 2).map((e) => ({ key: 'e' + e.id, title: e.title, sub: '일정 · ' + e.starts.slice(0, 10), to: admin ? '/admin/events' : '/learn/events' })),
+    ...data.assignments.filter((a) => has(a.title)).slice(0, 2).map((a) => ({ key: 's' + a.id, title: a.title, sub: '과제', to: admin ? '/admin/assignments' : '/learn/assignments' })),
+    ...(data.faqs ?? []).filter((f) => has(f.question) || has(f.answer)).slice(0, 2).map((f) => ({ key: 'f' + f.id, title: f.question, sub: 'FAQ', to: '/faq' })),
+    ...data.announcements.filter((a) => has(a.title)).slice(0, 2).map((a) => ({ key: 'a' + a.id, title: a.title, sub: '공지', to: admin ? '/admin/announcements' : '/learn/notices' })),
   ] : [];
   return (
     <div className="portal">
       <aside className={'sidebar ' + (mobile ? 'open' : '')}>
         <button className="sidebar-logo" onClick={() => go('/')}><Logo /></button>
-        <span className="sidebar-role">{admin ? '교육 운영' : '나의 학습'}</span>
-        <nav>
-          {menus.map(([p, n, Icon, badge]) => (
-            <button key={p} className={path === p || (p !== '/learn' && p !== '/admin' && path.startsWith(p)) ? 'selected' : ''} onClick={() => go(p)}>
-              <Icon size={20} />{n}
-              {badge && counts[badge] > 0 && <small>{counts[badge]}</small>}
-            </button>
+        <nav aria-label="주 메뉴">
+          {groups.map(([g, items]) => (
+            <div className="nav-group" key={g}>
+              <span className="nav-group-label">{g}</span>
+              {items.map(([p, n, Icon, badge]) => (
+                <button key={p} className={isSel(p) ? 'selected' : ''} aria-current={isSel(p) ? 'page' : undefined} onClick={() => go(p)}>
+                  <Icon size={20} />{n}
+                  {badge && counts[badge] > 0 && <small>{counts[badge]}</small>}
+                </button>
+              ))}
+            </div>
           ))}
         </nav>
         <div className="sidebar-support">
@@ -179,7 +212,21 @@ export function PortalLayout({ children }: { children: ReactNode }) {
             <NotificationBell />
           </div>
         </header>
+        {data.demo && admin && (
+          <div className="demo-strip" role="note">
+            <b>체험 관리자</b> · 화면을 둘러보는 전용 계정이라 저장·삭제는 되지 않아요. 회원 이메일은 가려서 보여드려요.
+            {data.needsAdmin && <> <button className="text-link" onClick={() => go('/admin/members')}>최초 최고 관리자 지정하기</button></>}
+          </div>
+        )}
         <main className="portal-content">{children}</main>
+        <nav className="bottom-nav" aria-label="빠른 메뉴">
+          {(admin ? BOTTOM_ADMIN : BOTTOM_STUDENT).map(([p, n, Icon, badge]) => (
+            <button key={p} className={path === p ? 'selected' : ''} aria-current={path === p ? 'page' : undefined} onClick={() => go(p)}>
+              <Icon size={20} /><span>{n}</span>{badge && counts[badge] > 0 && <small>{counts[badge] > 9 ? '9+' : counts[badge]}</small>}
+            </button>
+          ))}
+          <button onClick={() => setMobile(true)}><Menu size={20} /><span>전체 메뉴</span></button>
+        </nav>
         <div className="portal-footer">© Sellerbricks Campus <span>배움으로 시작하는 셀러의 성장</span><span className="portal-legal"><button onClick={() => go('/terms')}>이용약관</button><button onClick={() => go('/privacy')}><b>개인정보처리방침</b></button></span></div>
       </div>
     </div>

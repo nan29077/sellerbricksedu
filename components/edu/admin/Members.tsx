@@ -93,6 +93,8 @@ export function AdminMembers({ report = false }: { report?: boolean }) {
                 {!staff && <><span>{u.completed}강 완료</span><span>{fmtLong(u.watched)} 시청</span></>}
                 <span>가입 {fmtShort(u.created)}</span><span>{u.last_active ? `활동 ${relTime(u.last_active)}` : '활동 없음'}</span>
                 {providers.length > 0 && <span>{providers.map((p) => p === 'kakao' ? '카카오' : '네이버').join('·')} 로그인</span>}
+                {!u.id.startsWith('demo-') && <span>{u.email_verified ? '이메일 확인됨' : '이메일 미확인'}</span>}
+                {staff && u.mfa ? <span>2단계 인증 사용</span> : null}
               </div>
               {u.memo && <p className="member-memo"><StickyNote size={13} /> {u.memo}</p>}
               {!staff && (
@@ -115,6 +117,8 @@ export function AdminMembers({ report = false }: { report?: boolean }) {
                   {superAdmin && <Button secondary small title="운영 관리자로 지정" onClick={async () => { if (await ask(`${u.name}님을 운영 관리자로 지정할까요?`, '교육 운영 기능을 사용할 수 있게 됩니다. (연동 설정·삭제·권한 변경은 제외)')) perform('member', { id: u.id, role: 'manager' }, '운영 관리자로 지정했습니다.'); }}><ShieldCheck size={14} /></Button>}
                   {superAdmin && <Button secondary small danger title="삭제" onClick={async () => { if (await ask(`${u.name}님의 계정을 삭제할까요?`, '학습 기록, 노트, 질문이 모두 삭제되며 복구할 수 없습니다.', { danger: true, confirmLabel: '삭제' })) perform('member_delete', { id: u.id }, '계정을 삭제했습니다.'); }}><Trash2 size={14} /></Button>}
                 </>}
+                {staff && superAdmin && !isMe && !!u.mfa && <Button secondary small title="2단계 인증 초기화" onClick={async () => { if (await ask(`${u.name}님의 2단계 인증을 초기화할까요?`, '인증 앱을 잃어버린 경우에 사용하세요. 해당 계정의 로그인도 모두 해제됩니다.')) perform('mfa_reset', { userId: u.id }, '2단계 인증을 초기화했습니다.'); }}><KeyRound size={14} /> 2단계 인증 초기화</Button>}
+                {data.demo && data.needsAdmin && !u.id.startsWith('demo-') && u.role !== 'admin' && <Button small onClick={async () => { if (await ask(`${u.name}님을 최고 관리자로 지정할까요?`, '실제 최고 관리자가 아직 없어 최초 1회만 지정할 수 있어요. 지정 후 그 계정으로 로그인해 체험 계정을 꺼 주세요.')) perform('bootstrap_admin', { id: u.id }, '최고 관리자로 지정했습니다. 해당 계정으로 로그인해 주세요.'); }}><ShieldCheck size={14} /> 최고 관리자로 지정</Button>}
                 {staff && superAdmin && !isMe && <Button secondary small danger title="계정 삭제" onClick={async () => { if (await ask(`${u.name}님의 운영진 계정을 삭제할까요?`, undefined, { danger: true, confirmLabel: '삭제' })) perform('member_delete', { id: u.id }, '계정을 삭제했습니다.'); }}><Trash2 size={14} /></Button>}
               </div>
               {reset && superAdmin && <div className="info-note small"><KeyRound size={13} /> 재설정 요청 중 · {new Date(reset.expires).toLocaleString('ko-KR')}까지 <button className="text-link" onClick={() => { navigator.clipboard?.writeText(`${location.origin}/reset/${reset.token}`); setToast('재설정 링크를 복사했습니다.'); }}><Copy size={12} /> 링크 복사</button></div>}

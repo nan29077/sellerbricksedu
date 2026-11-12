@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { MessageCircle, ShieldCheck, User, Lock, ArrowLeft } from 'lucide-react';
+import { MessageCircle, ShieldCheck, User, Lock, ArrowLeft, KeyRound, MailCheck } from 'lucide-react';
 import { useEdu } from '../../../lib/edu-store';
 import { Button, Logo } from '../ui';
 
@@ -10,7 +10,28 @@ const OAUTH_MESSAGES: Record<string, string> = {
   state: '로그인 세션이 만료되었습니다. 다시 시도해 주세요.',
   failed: '소셜 로그인에 실패했습니다. 잠시 후 다시 시도해 주세요.',
   unavailable: '해당 소셜 로그인은 아직 연결되지 않았습니다.',
+  mfa: '2단계 인증을 사용하는 계정입니다. 인증 앱의 6자리 코드를 입력해 주세요.',
 };
+
+/** 2단계 인증 코드 입력 */
+function MfaStep({ token, onDone, onCancel }: { token: string; onDone: (j: any) => void; onCancel: () => void }) {
+  const { act, busy } = useEdu();
+  const [code, setCode] = useState('');
+  const [message, setMessage] = useState('');
+  return (
+    <form onSubmit={async (e) => {
+      e.preventDefault();
+      setMessage('');
+      try { onDone(await act('login_mfa', { token, code })); } catch (err: any) { setMessage(err.message); }
+    }}>
+      <div className="info-note"><KeyRound size={17} /> 인증 앱(Google Authenticator 등)에 표시된 6자리 코드를 입력해 주세요.</div>
+      <label>인증 코드<input inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} required autoFocus value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))} placeholder="000000" /></label>
+      {message && <div className="form-message" role="alert">{message}</div>}
+      <button className="button full" disabled={busy || code.length !== 6} type="submit">{busy ? '확인 중…' : '확인하고 로그인'}</button>
+      <button type="button" className="text-link" onClick={onCancel}>처음부터 다시 로그인</button>
+    </form>
+  );
+}
 
 export function LoginPage({ redirectTo }: { redirectTo?: string }) {
   const { act, go, busy, data } = useEdu();
@@ -21,10 +42,12 @@ export function LoginPage({ redirectTo }: { redirectTo?: string }) {
   const [agree, setAgree] = useState({ terms: false, privacy: false, age: false });
   const allAgreed = agree.terms && agree.privacy && agree.age;
   const oauth = data?.oauth ?? { kakao: false, naver: false };
-  const returnTo = redirectTo || params.get('return_to') || '/learn';
+  const returnTo = (() => { const r = redirectTo || params.get('return_to') || '/learn'; return r.startsWith('/') && !r.startsWith('//') ? r : '/learn'; })();
+  const [mfa, setMfa] = useState(params.get('mfa') || '');
+  const finish = (j: any) => { const to = j.returnTo || returnTo; go((j.user?.role === 'admin' || j.user?.role === 'manager') && to === '/learn' ? '/admin' : to); };
 
   useEffect(() => {
-    if (params.get('oauth')) history.replaceState({}, '', '/login');
+    if (params.get('oauth') || params.get('mfa')) history.replaceState({}, '', '/login');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -42,7 +65,8 @@ export function LoginPage({ redirectTo }: { redirectTo?: string }) {
       if (mode === 'register') {
         setMessage(j.message);
         if (j.message?.includes('바로 로그인')) setMode('login');
-      } else go((j.user?.role === 'admin' || j.user?.role === 'manager') && returnTo === '/learn' ? '/admin' : returnTo);
+      } else if (j.mfa) setMfa(j.mfa);
+      else finish(j);
     } catch (err: any) {
       setMessage(err.message);
     }
@@ -56,7 +80,7 @@ export function LoginPage({ redirectTo }: { redirectTo?: string }) {
   return (
     <div className="login-wrap">
       <div className="login-story">
-        <span className="eyebrow">SELLERBRICKS ACADEMY</span>
+        <span className="eyebrow">SELLERBRICKS CAMPUS</span>
         <h1>배움이 자신감으로,<br />자신감이 첫 판매로.</h1>
         <p>라이브 커머스의 첫 걸음을<br />셀러브릭스 캠퍼스와 함께하세요.</p>
         <img src="/images/banner-1.webp" alt="라이브 커머스 셀러" />
@@ -64,7 +88,13 @@ export function LoginPage({ redirectTo }: { redirectTo?: string }) {
       </div>
       <div className="login-form">
         <Logo onClick={() => go('/')} />
-        {mode === 'forgot' ? (
+        {mfa ? (
+          <>
+            <h2>2단계 인증</h2>
+            <p>계정 보호를 위해 한 번 더 확인할게요.</p>
+            <MfaStep token={mfa} onDone={finish} onCancel={() => { setMfa(''); setMessage(''); }} />
+          </>
+        ) : mode === 'forgot' ? (
           <>
             <button className="text-link back-link" onClick={() => { setMode('login'); setMessage(''); }}><ArrowLeft size={15} /> 로그인으로</button>
             <h2>비밀번호를 잊으셨나요?</h2>
@@ -80,7 +110,7 @@ export function LoginPage({ redirectTo }: { redirectTo?: string }) {
             </div>
           </>
         )}
-        <form onSubmit={submit}>
+        {!mfa && <form onSubmit={submit}>
           {mode === 'register' && (
             <label>이름<input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="셀러 이름을 입력해 주세요" autoComplete="name" /></label>
           )}
@@ -99,8 +129,8 @@ export function LoginPage({ redirectTo }: { redirectTo?: string }) {
           {message && <div className="form-message" role="status">{message}</div>}
           <button className="button full" disabled={busy} type="submit">{busy ? '처리 중…' : mode === 'register' ? '교육 가입 신청' : mode === 'forgot' ? '재설정 안내 받기' : '이메일로 로그인'}</button>
           {mode === 'login' && <button type="button" className="text-link forgot-link" onClick={() => { setMode('forgot'); setMessage(''); }}><Lock size={13} /> 비밀번호를 잊으셨나요?</button>}
-        </form>
-        {mode !== 'forgot' && (
+        </form>}
+        {mode !== 'forgot' && !mfa && (
           <>
             <div className="or"><span>또는 간편 로그인</span></div>
             <div className="social-buttons">
@@ -115,7 +145,7 @@ export function LoginPage({ redirectTo }: { redirectTo?: string }) {
                 <Button secondary small disabled={busy} onClick={async () => { try { await act('demo', { role: 'student' }); go('/learn'); } catch (e: any) { setMessage(e.message); } }}><User size={16} /> 교육생 체험</Button>
                 <Button secondary small disabled={busy} onClick={async () => { try { await act('demo', { role: 'admin' }); go('/admin'); } catch (e: any) { setMessage(e.message); } }}><ShieldCheck size={16} /> 최고 관리자 체험</Button>
               </div>
-              <small>체험 계정의 학습·편집 기록은 공유됩니다.</small>
+              <small>체험 계정은 여러 사람이 함께 쓰며, 관리자 체험은 둘러보기만 가능합니다.</small>
             </div>}
           </>
         )}
@@ -128,6 +158,11 @@ export function ResetPage({ token }: { token: string }) {
   const { act, go, busy } = useEdu();
   const [pw, setPw] = useState({ a: '', b: '' });
   const [message, setMessage] = useState('');
+  const [mfa, setMfa] = useState('');
+  if (mfa) return (
+    <div className="login-wrap single"><div className="login-form"><Logo onClick={() => go('/')} /><h2>2단계 인증</h2><p>비밀번호를 변경했습니다. 인증 앱의 코드를 입력하면 로그인됩니다.</p>
+      <MfaStep token={mfa} onDone={(j) => go(j.user?.role === 'student' ? '/learn' : '/admin')} onCancel={() => go('/login')} /></div></div>
+  );
   return (
     <div className="login-wrap single">
       <div className="login-form">
@@ -140,7 +175,8 @@ export function ResetPage({ token }: { token: string }) {
           try {
             const j = await act('reset', { token, password: pw.a });
             setMessage(j.message);
-            if (j.message?.includes('로그인했습니다')) setTimeout(() => go('/learn'), 800);
+            if (j.mfa) setMfa(j.mfa);
+            else if (j.message?.includes('로그인했습니다')) setTimeout(() => go('/learn'), 800);
           } catch (err: any) { setMessage(err.message); }
         }}>
           <label>새 비밀번호<input type="password" required minLength={10} value={pw.a} onChange={(e) => setPw({ ...pw, a: e.target.value })} autoComplete="new-password" /></label>
@@ -149,6 +185,28 @@ export function ResetPage({ token }: { token: string }) {
           <button className="button full" disabled={busy} type="submit">비밀번호 변경</button>
         </form>
         <button className="text-link" onClick={() => go('/login')}>로그인으로 돌아가기</button>
+      </div>
+    </div>
+  );
+}
+
+/** 이메일 인증 링크 */
+export function VerifyEmailPage({ token }: { token: string }) {
+  const { act, go, user } = useEdu();
+  const [state, setState] = useState<{ ok: boolean; message: string } | null>(null);
+  useEffect(() => {
+    let alive = true;
+    act('verify_email', { token }).then((j) => alive && setState({ ok: true, message: j.message }), (e) => alive && setState({ ok: false, message: e.message }));
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
+  return (
+    <div className="login-wrap single">
+      <div className="login-form">
+        <Logo onClick={() => go('/')} />
+        <h2><MailCheck size={22} /> 이메일 확인</h2>
+        <p role="status">{state ? state.message : '확인하고 있어요…'}</p>
+        {state && <Button onClick={() => go(user ? '/learn' : '/login')}>{user ? '나의 학습으로' : '로그인하기'}</Button>}
       </div>
     </div>
   );
